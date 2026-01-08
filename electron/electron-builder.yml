@@ -1,0 +1,98 @@
+appId: com.3dprinting.consumables
+productName: 3D打印耗材管理
+copyright: Copyright © 2024
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - resources/**/*
+  - package.json
+
+extraResources:
+  - from: ../frontend/dist
+    to: frontend
+    filter:
+      - "**/*"
+  - from: ../backend/dist
+    to: backend
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/.prisma
+    to: backend/node_modules/.prisma
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/@prisma
+    to: backend/node_modules/@prisma
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/express
+    to: backend/node_modules/express
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/cors
+    to: backend/node_modules/cors
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/dotenv
+    to: backend/node_modules/dotenv
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/jsonwebtoken
+    to: backend/node_modules/jsonwebtoken
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/bcryptjs
+    to: backend/node_modules/bcryptjs
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/uuid
+    to: backend/node_modules/uuid
+    filter:
+      - "**/*"
+  - from: ../backend/node_modules/exceljs
+    to: backend/node_modules/exceljs
+    filter:
+      - "**/*"
+  - from: ../backend/prisma
+    to: backend/prisma
+    filter:
+      - "schema.prisma"
+      - "migrations/**/*"
+
+# 包含所有后端运行时依赖
+asarUnpack:
+  - "**/*.node"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 3D打印耗材管理
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.utilities
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: resources/icon.png
+  category: Utility

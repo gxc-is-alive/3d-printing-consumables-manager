@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/auth.middleware';
 import { backupService } from '../services/backup.service';
 
 const router = Router();
 
 // 导出用户数据为 JSON 备份
-router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/export', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.user!.userId;
     const data = await backupService.exportUserData(userId);
 
     res.setHeader('Content-Type', 'application/json');
@@ -23,9 +23,9 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
 });
 
 // 导入用户数据（从备份恢复）
-router.post('/import', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/import', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.user!.userId;
     const data = req.body;
 
     if (!data || !data.version) {
@@ -46,9 +46,9 @@ router.post('/import', authMiddleware, async (req: AuthRequest, res: Response) =
 });
 
 // 导出耗材数据为 Excel
-router.get('/excel', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/excel', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.user!.userId;
     const buffer = await backupService.exportToExcel(userId);
 
     res.setHeader(
