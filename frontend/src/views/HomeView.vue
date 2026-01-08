@@ -45,6 +45,10 @@ async function handleLogout() {
           <h2>使用记录</h2>
           <p>记录耗材使用情况</p>
         </router-link>
+        <router-link to="/backup" class="nav-card">
+          <h2>💾 数据备份</h2>
+          <p>备份数据、导出Excel报表</p>
+        </router-link>
       </div>
     </main>
   </div>
