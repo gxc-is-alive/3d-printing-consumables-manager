@@ -49,6 +49,10 @@ async function handleLogout() {
           <h2>💾 数据备份</h2>
           <p>备份数据、导出Excel报表</p>
         </router-link>
+        <router-link to="/donate" class="nav-card donate">
+          <h2>❤️ 捐赠支持</h2>
+          <p>支持开发者，助力项目发展</p>
+        </router-link>
       </div>
     </main>
   </div>
@@ -139,6 +143,19 @@ async function handleLogout() {
 }
 
 .nav-card.highlight p {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.nav-card.donate {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+  color: white;
+}
+
+.nav-card.donate h2 {
+  color: white;
+}
+
+.nav-card.donate p {
   color: rgba(255, 255, 255, 0.9);
 }
 

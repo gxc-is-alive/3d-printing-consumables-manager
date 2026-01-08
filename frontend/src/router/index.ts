@@ -57,6 +57,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/RegisterView.vue"),
     meta: { requiresAuth: false },
   },
+  {
+    path: "/donate",
+    name: "Donate",
+    component: () => import("@/views/DonateView.vue"),
+    meta: { requiresAuth: false },
+  },
 ];
 
 const router = createRouter({
