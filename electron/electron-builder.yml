@@ -20,15 +20,6 @@ extraResources:
     to: backend
     filter:
       - "**/*"
-  - from: ../backend/node_modules
-    to: backend/node_modules
-    filter:
-      - "**/*"
-  - from: ../backend/prisma
-    to: backend/prisma
-    filter:
-      - "schema.prisma"
-      - "migrations/**/*"
 
 # 包含所有后端运行时依赖
 asarUnpack:

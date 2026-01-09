@@ -1,10 +1,41 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import * as path from "path";
+import * as fs from "fs";
 import { backendManager } from "./backend-manager";
 import { isDev, getFrontendPath } from "./utils";
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+
+// 日志文件路径
+function getLogPath(): string {
+  const userDataPath = app.getPath("userData");
+  return path.join(userDataPath, "app.log");
+}
+
+// 写入日志
+function log(message: string): void {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}\n`;
+  console.log(message);
+
+  try {
+    const logPath = getLogPath();
+    fs.appendFileSync(logPath, logMessage);
+  } catch (e) {
+    // 忽略日志写入错误
+  }
+}
+
+// 清空日志
+function clearLog(): void {
+  try {
+    const logPath = getLogPath();
+    fs.writeFileSync(logPath, "");
+  } catch (e) {
+    // 忽略
+  }
+}
 
 async function createSplashWindow(): Promise<BrowserWindow> {
   const splash = new BrowserWindow({
@@ -122,13 +153,21 @@ async function loadFrontend(win: BrowserWindow): Promise<void> {
 }
 
 async function startApp(): Promise<void> {
+  clearLog();
+  log("App starting...");
+  log(`Is Dev: ${isDev()}`);
+  log(`User Data Path: ${app.getPath("userData")}`);
+  log(`Resources Path: ${process.resourcesPath}`);
+
   // 显示启动画面
   splashWindow = await createSplashWindow();
 
   try {
+    log("Starting backend...");
     // 启动后端服务
     await backendManager.start();
 
+    log("Waiting for backend to be ready...");
     // 等待后端就绪
     const isReady = await backendManager.waitForReady(30000);
 
@@ -136,9 +175,11 @@ async function startApp(): Promise<void> {
       throw new Error("后端服务启动超时");
     }
 
+    log("Backend is ready, creating main window...");
     // 创建主窗口
     mainWindow = await createMainWindow();
 
+    log("Loading frontend...");
     // 加载前端
     await loadFrontend(mainWindow);
 
@@ -148,9 +189,12 @@ async function startApp(): Promise<void> {
       splashWindow = null;
     }
 
+    log("App started successfully");
     mainWindow.show();
     mainWindow.focus();
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    log(`启动失败: ${errorMessage}`);
     console.error("启动失败:", error);
 
     if (splashWindow) {
@@ -158,7 +202,7 @@ async function startApp(): Promise<void> {
       splashWindow = null;
     }
 
-    await showErrorDialog(error instanceof Error ? error.message : "未知错误");
+    await showErrorDialog(errorMessage + `\n\n日志文件: ${getLogPath()}`);
   }
 }
 

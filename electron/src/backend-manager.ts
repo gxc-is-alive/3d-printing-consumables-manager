@@ -1,9 +1,24 @@
-import { ChildProcess, spawn, execSync, fork } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import * as path from "path";
 import * as http from "http";
 import * as fs from "fs";
 import { app } from "electron";
 import { resolveDatabasePath, isDev, getDatabaseFilePath } from "./utils";
+
+// 简单的日志函数
+function log(message: string): void {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] [BackendManager] ${message}`;
+  console.log(logMessage);
+
+  try {
+    const userDataPath = app.getPath("userData");
+    const logPath = path.join(userDataPath, "app.log");
+    fs.appendFileSync(logPath, logMessage + "\n");
+  } catch (e) {
+    // 忽略
+  }
+}
 
 export class BackendManager {
   private process: ChildProcess | null = null;
@@ -17,7 +32,7 @@ export class BackendManager {
 
   async start(): Promise<void> {
     if (this.process) {
-      console.log("Backend already running");
+      log("Backend already running");
       return;
     }
 
@@ -25,9 +40,9 @@ export class BackendManager {
     const databaseUrl = resolveDatabasePath();
     const dbFilePath = getDatabaseFilePath();
 
-    console.log(`Starting backend from: ${backendPath}`);
-    console.log(`Database URL: ${databaseUrl}`);
-    console.log(`Is Dev: ${isDev()}`);
+    log(`Starting backend from: ${backendPath}`);
+    log(`Database URL: ${databaseUrl}`);
+    log(`Is Dev: ${isDev()}`);
 
     // 生产模式下初始化数据库
     if (!isDev()) {
@@ -45,6 +60,7 @@ export class BackendManager {
     if (isDev()) {
       // 开发模式：使用 ts-node 运行 TypeScript
       const entryFile = path.join(backendPath, "src", "index.ts");
+      log(`Dev mode, entry file: ${entryFile}`);
       this.process = spawn("npx", ["ts-node", entryFile], {
         cwd: backendPath,
         env,
@@ -54,32 +70,45 @@ export class BackendManager {
     } else {
       // 生产模式：使用 Node.js 直接运行编译后的 JS
       const entryFile = path.join(backendPath, "index.js");
-      console.log(`Entry file: ${entryFile}`);
-      console.log(`Entry file exists: ${fs.existsSync(entryFile)}`);
+      log(`Production mode, entry file: ${entryFile}`);
+      log(`Entry file exists: ${fs.existsSync(entryFile)}`);
+      log(`process.execPath: ${process.execPath}`);
 
-      // 使用 fork 而不是 spawn，更适合运行 Node.js 脚本
-      this.process = fork(entryFile, [], {
+      // 列出 backend 目录内容
+      try {
+        const files = fs.readdirSync(backendPath);
+        log(`Backend directory contents: ${files.join(", ")}`);
+      } catch (e) {
+        log(`Failed to list backend directory: ${e}`);
+      }
+
+      // 使用 spawn 运行 node
+      this.process = spawn(process.execPath, [entryFile], {
         cwd: backendPath,
-        env,
-        stdio: ["pipe", "pipe", "pipe", "ipc"],
+        env: {
+          ...env,
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
       });
     }
 
     this.process.stdout?.on("data", (data) => {
-      console.log(`[Backend] ${data.toString().trim()}`);
+      log(`[stdout] ${data.toString().trim()}`);
     });
 
     this.process.stderr?.on("data", (data) => {
-      console.error(`[Backend Error] ${data.toString().trim()}`);
+      log(`[stderr] ${data.toString().trim()}`);
     });
 
     this.process.on("error", (error) => {
-      console.error("Failed to start backend:", error);
+      log(`Process error: ${error.message}`);
       this.process = null;
     });
 
     this.process.on("exit", (code, signal) => {
-      console.log(`Backend exited with code ${code}, signal ${signal}`);
+      log(`Backend exited with code ${code}, signal ${signal}`);
       this.process = null;
     });
   }

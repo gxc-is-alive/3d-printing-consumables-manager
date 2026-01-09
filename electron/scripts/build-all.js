@@ -27,6 +27,12 @@ function ensureDir(dir) {
   }
 }
 
+function removeDir(dir) {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function buildFrontend() {
   log("Building frontend...");
   exec("npm run build", frontendDir);
@@ -44,6 +50,52 @@ async function buildElectron() {
   log("Building Electron...");
   exec("npm run build", electronDir);
   log("Electron build complete");
+}
+
+async function installProductionDeps() {
+  log("Installing production dependencies for backend...");
+
+  const prodNodeModules = path.join(backendDir, "dist", "node_modules");
+
+  // 删除旧的 node_modules
+  removeDir(prodNodeModules);
+
+  // 创建临时 package.json 只包含生产依赖
+  const packageJson = require(path.join(backendDir, "package.json"));
+  const prodPackageJson = {
+    name: packageJson.name,
+    version: packageJson.version,
+    dependencies: packageJson.dependencies,
+  };
+
+  const prodPackageJsonPath = path.join(backendDir, "dist", "package.json");
+  fs.writeFileSync(
+    prodPackageJsonPath,
+    JSON.stringify(prodPackageJson, null, 2)
+  );
+
+  // 在 dist 目录安装生产依赖
+  exec("npm install --production --omit=dev", path.join(backendDir, "dist"));
+
+  log("Production dependencies installed");
+
+  // 生成 Prisma Client
+  log("Generating Prisma Client...");
+  // 使用 backend 目录的 prisma CLI 生成 client 到 dist 目录
+  const distDir = path.join(backendDir, "dist");
+  const schemaPath = path.join(distDir, "prisma", "schema.prisma");
+
+  // 修改 schema.prisma 的 output 路径指向 dist/node_modules/.prisma/client
+  const schemaContent = fs.readFileSync(schemaPath, "utf-8");
+  const modifiedSchema = schemaContent.replace(
+    'provider = "prisma-client-js"',
+    `provider = "prisma-client-js"\n  output   = "../node_modules/.prisma/client"`
+  );
+  fs.writeFileSync(schemaPath, modifiedSchema);
+
+  // 使用 backend 目录的 prisma 生成 client
+  exec(`npx prisma generate --schema="${schemaPath}"`, backendDir);
+  log("Prisma Client generated");
 }
 
 async function copyPrismaFiles() {
@@ -115,6 +167,9 @@ async function main() {
 
     // 创建生产环境配置
     await createEnvFile();
+
+    // 安装生产依赖到 dist 目录
+    await installProductionDeps();
 
     // 构建 Electron
     await buildElectron();
