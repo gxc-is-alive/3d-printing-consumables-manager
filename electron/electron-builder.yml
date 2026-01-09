@@ -20,40 +20,8 @@ extraResources:
     to: backend
     filter:
       - "**/*"
-  - from: ../backend/node_modules/.prisma
-    to: backend/node_modules/.prisma
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/@prisma
-    to: backend/node_modules/@prisma
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/express
-    to: backend/node_modules/express
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/cors
-    to: backend/node_modules/cors
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/dotenv
-    to: backend/node_modules/dotenv
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/jsonwebtoken
-    to: backend/node_modules/jsonwebtoken
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/bcryptjs
-    to: backend/node_modules/bcryptjs
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/uuid
-    to: backend/node_modules/uuid
-    filter:
-      - "**/*"
-  - from: ../backend/node_modules/exceljs
-    to: backend/node_modules/exceljs
+  - from: ../backend/node_modules
+    to: backend/node_modules
     filter:
       - "**/*"
   - from: ../backend/prisma
@@ -65,6 +33,7 @@ extraResources:
 # 包含所有后端运行时依赖
 asarUnpack:
   - "**/*.node"
+  - "**/backend/**/*"
 
 win:
   target:

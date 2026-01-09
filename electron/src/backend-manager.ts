@@ -1,4 +1,4 @@
-import { ChildProcess, spawn, execSync } from "child_process";
+import { ChildProcess, spawn, execSync, fork } from "child_process";
 import * as path from "path";
 import * as http from "http";
 import * as fs from "fs";
@@ -27,6 +27,7 @@ export class BackendManager {
 
     console.log(`Starting backend from: ${backendPath}`);
     console.log(`Database URL: ${databaseUrl}`);
+    console.log(`Is Dev: ${isDev()}`);
 
     // 生产模式下初始化数据库
     if (!isDev()) {
@@ -41,19 +42,28 @@ export class BackendManager {
       JWT_SECRET: process.env.JWT_SECRET || "electron-app-secret-key",
     };
 
-    const entryFile = isDev()
-      ? path.join(backendPath, "src", "index.ts")
-      : path.join(backendPath, "index.js");
+    if (isDev()) {
+      // 开发模式：使用 ts-node 运行 TypeScript
+      const entryFile = path.join(backendPath, "src", "index.ts");
+      this.process = spawn("npx", ["ts-node", entryFile], {
+        cwd: backendPath,
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: true,
+      });
+    } else {
+      // 生产模式：使用 Node.js 直接运行编译后的 JS
+      const entryFile = path.join(backendPath, "index.js");
+      console.log(`Entry file: ${entryFile}`);
+      console.log(`Entry file exists: ${fs.existsSync(entryFile)}`);
 
-    const command = isDev() ? "npx" : "node";
-    const args = isDev() ? ["ts-node", entryFile] : [entryFile];
-
-    this.process = spawn(command, args, {
-      cwd: backendPath,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: true,
-    });
+      // 使用 fork 而不是 spawn，更适合运行 Node.js 脚本
+      this.process = fork(entryFile, [], {
+        cwd: backendPath,
+        env,
+        stdio: ["pipe", "pipe", "pipe", "ipc"],
+      });
+    }
 
     this.process.stdout?.on("data", (data) => {
       console.log(`[Backend] ${data.toString().trim()}`);
@@ -90,26 +100,9 @@ export class BackendManager {
     const dbExists = fs.existsSync(dbFilePath);
 
     if (!dbExists) {
-      console.log("Database not found, initializing...");
-
-      try {
-        // 使用 Prisma db push 创建数据库结构
-        const env = {
-          ...process.env,
-          DATABASE_URL: `file:${dbFilePath}`,
-        };
-
-        execSync("npx prisma db push --skip-generate", {
-          cwd: backendPath,
-          env,
-          stdio: "pipe",
-        });
-
-        console.log("Database initialized successfully");
-      } catch (error) {
-        console.error("Failed to initialize database:", error);
-        // 继续启动，让后端处理数据库错误
-      }
+      console.log("Database not found, will be created on first connection...");
+      // Prisma 会在首次连接时自动创建 SQLite 数据库文件
+      // 不再依赖 npx prisma db push
     } else {
       console.log("Database already exists");
     }
