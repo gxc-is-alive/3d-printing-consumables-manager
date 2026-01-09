@@ -49,6 +49,14 @@ async function handleLogout() {
           <h2>💾 数据备份</h2>
           <p>备份数据、导出Excel报表</p>
         </router-link>
+        <router-link to="/maintenance" class="nav-card">
+          <h2>🔧 保养记录</h2>
+          <p>记录打印机保养时间和内容</p>
+        </router-link>
+        <router-link to="/accessories" class="nav-card">
+          <h2>🔩 配件管理</h2>
+          <p>管理打印机配件库存和更换</p>
+        </router-link>
         <router-link to="/donate" class="nav-card donate">
           <h2>❤️ 捐赠支持</h2>
           <p>支持开发者，助力项目发展</p>

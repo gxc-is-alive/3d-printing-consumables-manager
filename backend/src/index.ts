@@ -150,6 +150,35 @@ async function createTables() {
     )
   `;
 
+  // 创建 BrandConfigFile 表
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "BrandConfigFile" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "brandId" TEXT NOT NULL,
+      "fileName" TEXT NOT NULL,
+      "fileSize" INTEGER NOT NULL,
+      "storagePath" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "BrandConfigFile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "BrandConfigFile_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `;
+
+  // 创建 MaintenanceRecord 表
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "MaintenanceRecord" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "date" DATETIME NOT NULL,
+      "type" TEXT NOT NULL,
+      "description" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "MaintenanceRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `;
+
   console.log('Database tables created successfully');
 }
 

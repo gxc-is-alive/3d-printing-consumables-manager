@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useBrandStore, type Brand, type BrandFormData } from '@/stores/brand';
+import { useBrandConfigFileStore, type BrandConfigFile } from '@/stores/brandConfigFile';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const brandStore = useBrandStore();
+const configFileStore = useBrandConfigFileStore();
 
 const showForm = ref(false);
 const editingBrand = ref<Brand | null>(null);
@@ -16,6 +18,12 @@ const formData = ref<BrandFormData>({
   website: '',
 });
 const deleteConfirmId = ref<string | null>(null);
+
+// 配置文件管理相关状态
+const showConfigFiles = ref(false);
+const currentBrandForFiles = ref<Brand | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
+const deleteFileConfirmId = ref<string | null>(null);
 
 onMounted(async () => {
   await brandStore.fetchBrands();
@@ -60,7 +68,6 @@ async function handleSubmit() {
   }
 }
 
-
 function confirmDelete(id: string) {
   deleteConfirmId.value = id;
 }
@@ -81,6 +88,77 @@ async function handleDelete() {
 async function handleLogout() {
   await authStore.logout();
   router.push('/login');
+}
+
+// 配置文件管理函数
+async function openConfigFiles(brand: Brand) {
+  currentBrandForFiles.value = brand;
+  configFileStore.clearError();
+  configFileStore.clearFiles();
+  showConfigFiles.value = true;
+  await configFileStore.fetchFiles(brand.id);
+}
+
+function closeConfigFiles() {
+  showConfigFiles.value = false;
+  currentBrandForFiles.value = null;
+  configFileStore.clearFiles();
+  configFileStore.clearError();
+}
+
+function triggerFileInput() {
+  fileInput.value?.click();
+}
+
+async function handleFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const files = target.files;
+  if (files && files.length > 0 && currentBrandForFiles.value) {
+    const fileList = Array.from(files);
+    await configFileStore.uploadFiles(currentBrandForFiles.value.id, fileList);
+    // 清空 input 以便可以再次选择相同文件
+    target.value = '';
+  }
+}
+
+async function handleDownload(file: BrandConfigFile) {
+  await configFileStore.downloadFile(file.id, file.fileName);
+}
+
+function confirmDeleteFile(fileId: string) {
+  deleteFileConfirmId.value = fileId;
+}
+
+function cancelDeleteFile() {
+  deleteFileConfirmId.value = null;
+}
+
+async function handleDeleteFile() {
+  if (deleteFileConfirmId.value) {
+    const success = await configFileStore.deleteFile(deleteFileConfirmId.value);
+    if (success) {
+      deleteFileConfirmId.value = null;
+    }
+  }
+}
+
+// 格式化文件大小
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// 格式化日期
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 </script>
 
@@ -123,13 +201,13 @@ async function handleLogout() {
             </a>
           </div>
           <div class="brand-actions">
+            <button @click="openConfigFiles(brand)" class="btn btn-info">配置文件</button>
             <button @click="openEditForm(brand)" class="btn btn-secondary">编辑</button>
             <button @click="confirmDelete(brand.id)" class="btn btn-danger">删除</button>
           </div>
         </div>
       </div>
     </main>
-
 
     <!-- Create/Edit Form Modal -->
     <div v-if="showForm" class="modal-overlay" @click.self="closeForm">
@@ -200,9 +278,87 @@ async function handleLogout() {
         </div>
       </div>
     </div>
+
+    <!-- Config Files Modal -->
+    <div v-if="showConfigFiles" class="modal-overlay" @click.self="closeConfigFiles">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h2>配置文件 - {{ currentBrandForFiles?.name }}</h2>
+          <button @click="closeConfigFiles" class="close-btn">&times;</button>
+        </div>
+        
+        <div class="upload-section">
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            @change="handleFileSelect"
+            style="display: none"
+          />
+          <button 
+            @click="triggerFileInput" 
+            class="btn btn-primary"
+            :disabled="configFileStore.isLoading"
+          >
+            {{ configFileStore.isLoading ? '上传中...' : '+ 上传文件' }}
+          </button>
+          <span class="upload-hint">支持任意文件类型，可多选</span>
+        </div>
+
+        <div v-if="configFileStore.error" class="error-message">
+          {{ configFileStore.error }}
+        </div>
+
+        <div v-if="configFileStore.isLoading && configFileStore.files.length === 0" class="loading">
+          加载中...
+        </div>
+
+        <div v-else-if="configFileStore.files.length === 0" class="empty-state">
+          <p>暂无配置文件</p>
+          <p>点击"上传文件"按钮添加配置文件</p>
+        </div>
+
+        <div v-else class="file-list">
+          <div v-for="file in configFileStore.files" :key="file.id" class="file-item">
+            <div class="file-info">
+              <span class="file-name">{{ file.fileName }}</span>
+              <span class="file-meta">
+                {{ formatFileSize(file.fileSize) }} · {{ formatDate(file.createdAt) }}
+              </span>
+            </div>
+            <div class="file-actions">
+              <button @click="handleDownload(file)" class="btn btn-small btn-secondary">
+                下载
+              </button>
+              <button @click="confirmDeleteFile(file.id)" class="btn btn-small btn-danger">
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete File Confirmation Modal -->
+    <div v-if="deleteFileConfirmId" class="modal-overlay" @click.self="cancelDeleteFile">
+      <div class="modal modal-confirm">
+        <h2>确认删除</h2>
+        <p>确定要删除这个配置文件吗？此操作无法撤销。</p>
+        <div v-if="configFileStore.error" class="error-message">
+          {{ configFileStore.error }}
+        </div>
+        <div class="form-actions">
+          <button @click="cancelDeleteFile" class="btn btn-secondary" :disabled="configFileStore.isLoading">
+            取消
+          </button>
+          <button @click="handleDeleteFile" class="btn btn-danger" :disabled="configFileStore.isLoading">
+            {{ configFileStore.isLoading ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
-
 
 <style scoped>
 .brands-page {
@@ -299,6 +455,15 @@ async function handleLogout() {
   background: #d0d0d0;
 }
 
+.btn-info {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-info:hover:not(:disabled) {
+  background: #138496;
+}
+
 .btn-danger {
   background: #e74c3c;
   color: white;
@@ -311,6 +476,11 @@ async function handleLogout() {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn-small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
 }
 
 .loading, .empty-state {
@@ -387,8 +557,37 @@ async function handleLogout() {
   overflow-y: auto;
 }
 
+.modal-large {
+  max-width: 700px;
+}
+
 .modal h2 {
   margin: 0 0 1.5rem 0;
+  color: #333;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.close-btn:hover {
   color: #333;
 }
 
@@ -443,5 +642,62 @@ async function handleLogout() {
   justify-content: flex-end;
   gap: 1rem;
   margin-top: 1.5rem;
+}
+
+/* 配置文件相关样式 */
+.upload-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.upload-hint {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-meta {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.file-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 </style>

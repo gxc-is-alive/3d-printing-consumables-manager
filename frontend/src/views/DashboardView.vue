@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useDashboardStore } from "@/stores/dashboard";
 import { useBrandStore } from "@/stores/brand";
 import { useConsumableTypeStore } from "@/stores/consumableType";
+import { useAccessoryStore } from "@/stores/accessory";
 import ColorSearch from "@/components/ColorSearch.vue";
 
 const router = useRouter();
@@ -12,6 +13,7 @@ const authStore = useAuthStore();
 const dashboardStore = useDashboardStore();
 const brandStore = useBrandStore();
 const typeStore = useConsumableTypeStore();
+const accessoryStore = useAccessoryStore();
 
 const activeTab = ref<"brand" | "type" | "color">("brand");
 
@@ -25,6 +27,7 @@ onMounted(async () => {
     dashboardStore.fetchAll(),
     brandStore.fetchBrands(),
     typeStore.fetchTypes(),
+    accessoryStore.fetchAlerts(),
   ]);
 });
 
@@ -215,6 +218,38 @@ const hasActiveFilters = computed(() => {
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- Accessory Alerts -->
+        <section
+          v-if="accessoryStore.alerts.length > 0"
+          class="accessory-alerts-section"
+        >
+          <h2>🔩 配件提醒</h2>
+          <div class="accessory-alerts-list">
+            <div
+              v-for="alert in accessoryStore.alerts"
+              :key="alert.id"
+              class="accessory-alert-item"
+              :class="alert.type"
+            >
+              <div class="alert-info">
+                <span class="alert-name">{{ alert.name }}</span>
+                <span class="alert-category">{{ alert.categoryName }}</span>
+              </div>
+              <div class="alert-message">
+                <span v-if="alert.type === 'replacement_due'" class="replacement-alert">
+                  ⏰ 已超期 {{ alert.daysOverdue }} 天需更换
+                </span>
+                <span v-else-if="alert.type === 'low_stock'" class="stock-alert">
+                  📦 库存不足 (剩余 {{ alert.remainingQty }} / 阈值 {{ alert.threshold }})
+                </span>
+              </div>
+            </div>
+          </div>
+          <router-link to="/accessories" class="view-accessories-link">
+            查看配件管理 →
+          </router-link>
         </section>
 
         <!-- Inventory by Category -->
@@ -637,6 +672,84 @@ const hasActiveFilters = computed(() => {
 .percent {
   color: #999;
   font-size: 0.9rem;
+}
+
+/* Accessory Alerts Section */
+.accessory-alerts-section {
+  background: #fff8e1;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #ffb74d;
+  margin-bottom: 2rem;
+}
+
+.accessory-alerts-section h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: #f57c00;
+}
+
+.accessory-alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.accessory-alert-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 4px;
+}
+
+.accessory-alert-item.replacement_due {
+  border-left: 3px solid #f57c00;
+}
+
+.accessory-alert-item.low_stock {
+  border-left: 3px solid #42a5f5;
+}
+
+.alert-info {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.alert-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.alert-category {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.alert-message {
+  font-size: 0.9rem;
+}
+
+.replacement-alert {
+  color: #f57c00;
+}
+
+.stock-alert {
+  color: #1976d2;
+}
+
+.view-accessories-link {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #f57c00;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.view-accessories-link:hover {
+  text-decoration: underline;
 }
 
 /* Inventory Section */
