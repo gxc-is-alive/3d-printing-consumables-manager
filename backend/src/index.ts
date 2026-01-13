@@ -186,8 +186,9 @@ async function createTables() {
 async function startServer() {
   await initDatabase();
 
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  // 监听所有接口 (0.0.0.0)，确保容器内 nginx 可以访问
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`Server is running on 0.0.0.0:${PORT}`);
   });
 }
 
