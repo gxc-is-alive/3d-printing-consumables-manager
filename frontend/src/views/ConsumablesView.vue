@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useConsumableStore, type Consumable, type ConsumableFormData } from '@/stores/consumable';
+import { ref, onMounted, computed, watch } from 'vue';
+import { useConsumableStore, type Consumable, type ConsumableFormData, type BatchCreateFormData } from '@/stores/consumable';
 import { useBrandStore } from '@/stores/brand';
 import { useConsumableTypeStore } from '@/stores/consumableType';
 import { useAuthStore } from '@/stores/auth';
@@ -16,7 +16,7 @@ const typeStore = useConsumableTypeStore();
 
 const showForm = ref(false);
 const editingConsumable = ref<Consumable | null>(null);
-const formData = ref<ConsumableFormData>({
+const formData = ref<ConsumableFormData & { quantity?: number; isOpened?: boolean; openedAt?: string }>({
   brandId: '',
   typeId: '',
   color: '',
@@ -25,9 +25,19 @@ const formData = ref<ConsumableFormData>({
   price: 0,
   purchaseDate: new Date().toISOString().split('T')[0],
   notes: '',
+  quantity: 1,
+  isOpened: false,
+  openedAt: '',
 });
 const deleteConfirmId = ref<string | null>(null);
 const openConfirmId = ref<string | null>(null);
+
+// 当 isOpened 变化时，自动设置 openedAt
+watch(() => formData.value.isOpened, (newVal) => {
+  if (newVal && !formData.value.openedAt) {
+    formData.value.openedAt = new Date().toISOString().split('T')[0];
+  }
+});
 
 // Filters using the new component
 const filterValues = ref<FilterValues>({
@@ -97,6 +107,9 @@ function openCreateForm() {
     price: 0,
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
+    quantity: 1,
+    isOpened: false,
+    openedAt: '',
   };
   consumableStore.clearError();
   showForm.value = true;
@@ -113,6 +126,9 @@ function openEditForm(consumable: Consumable) {
     price: consumable.price,
     purchaseDate: consumable.purchaseDate.split('T')[0],
     notes: consumable.notes || '',
+    quantity: 1, // 编辑时不显示数量
+    isOpened: consumable.isOpened,
+    openedAt: consumable.openedAt ? consumable.openedAt.split('T')[0] : '',
   };
   consumableStore.clearError();
   showForm.value = true;
@@ -132,14 +148,52 @@ async function handleSubmit() {
   };
 
   if (editingConsumable.value) {
+    // 编辑模式：使用单个更新
     const result = await consumableStore.updateConsumable(editingConsumable.value.id, submitData);
     if (result) {
       closeForm();
     }
   } else {
-    const result = await consumableStore.createConsumable(submitData);
-    if (result) {
-      closeForm();
+    // 新增模式：根据数量决定使用批量创建还是单个创建
+    const quantity = formData.value.quantity || 1;
+    if (quantity > 1) {
+      // 批量创建
+      const batchData: BatchCreateFormData = {
+        brandId: formData.value.brandId,
+        typeId: formData.value.typeId,
+        color: formData.value.color,
+        colorHex: formData.value.colorHex || undefined,
+        weight: formData.value.weight,
+        price: formData.value.price,
+        purchaseDate: formData.value.purchaseDate,
+        notes: formData.value.notes || undefined,
+        quantity: quantity,
+        isOpened: formData.value.isOpened,
+        openedAt: formData.value.isOpened ? formData.value.openedAt : undefined,
+      };
+      const result = await consumableStore.batchCreateConsumable(batchData);
+      if (result) {
+        closeForm();
+      }
+    } else {
+      // 单个创建（也支持开封状态）
+      const batchData: BatchCreateFormData = {
+        brandId: formData.value.brandId,
+        typeId: formData.value.typeId,
+        color: formData.value.color,
+        colorHex: formData.value.colorHex || undefined,
+        weight: formData.value.weight,
+        price: formData.value.price,
+        purchaseDate: formData.value.purchaseDate,
+        notes: formData.value.notes || undefined,
+        quantity: 1,
+        isOpened: formData.value.isOpened,
+        openedAt: formData.value.isOpened ? formData.value.openedAt : undefined,
+      };
+      const result = await consumableStore.batchCreateConsumable(batchData);
+      if (result) {
+        closeForm();
+      }
     }
   }
 }
@@ -310,9 +364,30 @@ async function handleLogout() {
               <input id="price" v-model.number="formData.price" type="number" min="0" step="0.01" required :disabled="consumableStore.isLoading" />
             </div>
           </div>
-          <div class="form-group">
-            <label for="purchaseDate">购买日期 *</label>
-            <input id="purchaseDate" v-model="formData.purchaseDate" type="date" required :disabled="consumableStore.isLoading" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="purchaseDate">购买日期 *</label>
+              <input id="purchaseDate" v-model="formData.purchaseDate" type="date" required :disabled="consumableStore.isLoading" />
+            </div>
+            <!-- 数量输入框（仅新增时显示） -->
+            <div v-if="!editingConsumable" class="form-group">
+              <label for="quantity">数量</label>
+              <input id="quantity" v-model.number="formData.quantity" type="number" min="1" max="100" :disabled="consumableStore.isLoading" />
+              <span class="form-hint">批量添加同品牌同类型同颜色的耗材</span>
+            </div>
+          </div>
+          <!-- 开封状态（仅新增时显示） -->
+          <div v-if="!editingConsumable" class="form-row">
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="formData.isOpened" :disabled="consumableStore.isLoading" />
+                <span>已开封</span>
+              </label>
+            </div>
+            <div v-if="formData.isOpened" class="form-group">
+              <label for="openedAt">开封日期</label>
+              <input id="openedAt" v-model="formData.openedAt" type="date" :disabled="consumableStore.isLoading" />
+            </div>
           </div>
           <div class="form-group">
             <label for="notes">备注</label>
@@ -322,7 +397,7 @@ async function handleLogout() {
           <div class="form-actions">
             <button type="button" @click="closeForm" class="btn btn-secondary" :disabled="consumableStore.isLoading">取消</button>
             <button type="submit" class="btn btn-primary" :disabled="consumableStore.isLoading">
-              {{ consumableStore.isLoading ? '保存中...' : '保存' }}
+              {{ consumableStore.isLoading ? '保存中...' : (editingConsumable ? '保存' : (formData.quantity && formData.quantity > 1 ? `添加 ${formData.quantity} 个` : '保存')) }}
             </button>
           </div>
         </form>
@@ -690,5 +765,30 @@ async function handleLogout() {
   justify-content: flex-end;
   gap: 1rem;
   margin-top: 1.5rem;
+}
+
+.form-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
 }
 </style>

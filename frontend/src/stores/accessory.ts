@@ -32,6 +32,8 @@ export interface Accessory {
   updatedAt: string;
   category?: { id: string; name: string };
   usageRecords?: AccessoryUsage[];
+  usageType?: "consumable" | "durable";
+  inUseStartedAt?: string | null;
 }
 
 export interface AccessoryFormData {
@@ -45,7 +47,15 @@ export interface AccessoryFormData {
   replacementCycle?: number;
   lowStockThreshold?: number;
   notes?: string;
+  usageType?: "consumable" | "durable";
 }
+
+export type UsageType = "consumable" | "durable";
+
+export const USAGE_TYPE_LABELS = {
+  consumable: "消耗型",
+  durable: "耐用型",
+} as const;
 
 export interface AccessoryAlert {
   id: string;
@@ -81,6 +91,7 @@ export const ACCESSORY_STATUS = {
   available: "可用",
   low_stock: "库存不足",
   depleted: "已用完",
+  in_use: "使用中",
 } as const;
 
 export type AccessoryStatus = keyof typeof ACCESSORY_STATUS;
@@ -275,6 +286,65 @@ export const useAccessoryStore = defineStore("accessory", () => {
     }
   }
 
+  async function startUsing(id: string): Promise<boolean> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.post<AccessoryResponse>(
+        `/accessories/${id}/start-using`
+      );
+      if (response.data.success && response.data.data) {
+        const index = accessories.value.findIndex((a) => a.id === id);
+        if (index !== -1) {
+          accessories.value[index] = response.data.data;
+        }
+        return true;
+      }
+      error.value = response.data.error || "开始使用失败";
+      return false;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value = axiosError.response?.data?.error || "开始使用失败";
+      } else {
+        error.value = "开始使用失败";
+      }
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function stopUsing(id: string, purpose?: string): Promise<boolean> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.post<AccessoryResponse>(
+        `/accessories/${id}/stop-using`,
+        { purpose }
+      );
+      if (response.data.success && response.data.data) {
+        const index = accessories.value.findIndex((a) => a.id === id);
+        if (index !== -1) {
+          accessories.value[index] = response.data.data;
+        }
+        return true;
+      }
+      error.value = response.data.error || "结束使用失败";
+      return false;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value = axiosError.response?.data?.error || "结束使用失败";
+      } else {
+        error.value = "结束使用失败";
+      }
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   return {
     accessories,
     alerts,
@@ -287,5 +357,7 @@ export const useAccessoryStore = defineStore("accessory", () => {
     deleteAccessory,
     recordUsage,
     fetchAlerts,
+    startUsing,
+    stopUsing,
   };
 });

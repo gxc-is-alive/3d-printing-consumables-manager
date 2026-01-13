@@ -60,6 +60,26 @@ interface ConsumablesResponse {
   error?: string;
 }
 
+export interface BatchCreateFormData {
+  brandId: string;
+  typeId: string;
+  color: string;
+  colorHex?: string;
+  weight: number;
+  price: number;
+  purchaseDate: string;
+  notes?: string;
+  quantity: number;
+  isOpened?: boolean;
+  openedAt?: string;
+}
+
+interface BatchCreateResponse {
+  success: boolean;
+  data?: { count: number; consumables: Consumable[] };
+  error?: string;
+}
+
 export const useConsumableStore = defineStore("consumable", () => {
   const consumables = ref<Consumable[]>([]);
   const currentConsumable = ref<Consumable | null>(null);
@@ -158,6 +178,36 @@ export const useConsumableStore = defineStore("consumable", () => {
           axiosError.response?.data?.error || "Failed to create consumable";
       } else {
         error.value = "Failed to create consumable";
+      }
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function batchCreateConsumable(
+    data: BatchCreateFormData
+  ): Promise<{ count: number; consumables: Consumable[] } | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.post<BatchCreateResponse>(
+        "/consumables/batch",
+        data
+      );
+      if (response.data.success && response.data.data) {
+        // 将新创建的耗材添加到列表前面
+        consumables.value.unshift(...response.data.data.consumables);
+        return response.data.data;
+      }
+      error.value = response.data.error || "批量创建耗材失败";
+      return null;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value = axiosError.response?.data?.error || "批量创建耗材失败";
+      } else {
+        error.value = "批量创建耗材失败";
       }
       return null;
     } finally {
@@ -274,6 +324,7 @@ export const useConsumableStore = defineStore("consumable", () => {
     fetchConsumables,
     fetchConsumable,
     createConsumable,
+    batchCreateConsumable,
     updateConsumable,
     deleteConsumable,
     markAsOpened,

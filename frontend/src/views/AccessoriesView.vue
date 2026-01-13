@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useAccessoryStore, ACCESSORY_STATUS, type AccessoryFormData, type Accessory, type AccessoryStatus } from '@/stores/accessory';
+import { useAccessoryStore, ACCESSORY_STATUS, USAGE_TYPE_LABELS, type AccessoryFormData, type Accessory, type AccessoryStatus, type UsageType } from '@/stores/accessory';
 import { useAccessoryCategoryStore } from '@/stores/accessoryCategory';
 
 const router = useRouter();
@@ -23,6 +23,10 @@ const usageAccessoryId = ref<string | null>(null);
 const usageAccessoryName = ref('');
 const usageAccessoryRemaining = ref(0);
 const showCategoryModal = ref(false);
+const showStopUsingModal = ref(false);
+const stopUsingAccessoryId = ref<string | null>(null);
+const stopUsingAccessoryName = ref('');
+const stopUsingPurpose = ref('');
 
 // 备注展开状态
 const expandedNotes = ref<Set<string>>(new Set());
@@ -39,6 +43,7 @@ const formData = ref<AccessoryFormData>({
   replacementCycle: undefined,
   lowStockThreshold: undefined,
   notes: '',
+  usageType: 'consumable',
 });
 
 const usageFormData = ref({
@@ -103,6 +108,7 @@ function openCreateModal() {
     replacementCycle: undefined,
     lowStockThreshold: undefined,
     notes: '',
+    usageType: 'consumable',
   };
   showModal.value = true;
 }
@@ -121,6 +127,7 @@ function openEditModal(accessory: Accessory) {
     replacementCycle: accessory.replacementCycle || undefined,
     lowStockThreshold: accessory.lowStockThreshold || undefined,
     notes: accessory.notes || '',
+    usageType: (accessory.usageType as UsageType) || 'consumable',
   };
   showModal.value = true;
 }
@@ -239,6 +246,52 @@ function formatPrice(price: number | null): string {
 function getStatusLabel(status: string): string {
   return ACCESSORY_STATUS[status as AccessoryStatus] || status;
 }
+
+// 开始使用耐用型配件
+async function handleStartUsing(accessory: Accessory) {
+  const success = await accessoryStore.startUsing(accessory.id);
+  if (!success && accessoryStore.error) {
+    alert(accessoryStore.error);
+  }
+}
+
+// 打开结束使用弹窗
+function openStopUsingModal(accessory: Accessory) {
+  stopUsingAccessoryId.value = accessory.id;
+  stopUsingAccessoryName.value = accessory.name;
+  stopUsingPurpose.value = '';
+  showStopUsingModal.value = true;
+}
+
+function closeStopUsingModal() {
+  showStopUsingModal.value = false;
+  stopUsingAccessoryId.value = null;
+  accessoryStore.clearError();
+}
+
+async function handleStopUsing() {
+  if (stopUsingAccessoryId.value) {
+    const success = await accessoryStore.stopUsing(stopUsingAccessoryId.value, stopUsingPurpose.value || undefined);
+    if (success) {
+      closeStopUsingModal();
+    }
+  }
+}
+
+// 格式化使用中时长
+function formatInUseDuration(startedAt: string | null | undefined): string {
+  if (!startedAt) return '';
+  const start = new Date(startedAt);
+  const now = new Date();
+  const diffMs = now.getTime() - start.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  
+  if (diffDays > 0) {
+    return `已使用 ${diffDays} 天 ${diffHours} 小时`;
+  }
+  return `已使用 ${diffHours} 小时`;
+}
 </script>
 
 <template>
@@ -295,9 +348,18 @@ function getStatusLabel(status: string): string {
             <div v-for="accessory in group.items" :key="accessory.id" class="accessory-card">
               <div class="card-header">
                 <h3 class="accessory-name">{{ accessory.name }}</h3>
-                <span class="accessory-status" :class="accessory.status">
-                  {{ getStatusLabel(accessory.status) }}
-                </span>
+                <div class="card-badges">
+                  <span v-if="accessory.usageType === 'durable'" class="usage-type-badge durable">耐用型</span>
+                  <span class="accessory-status" :class="accessory.status">
+                    {{ getStatusLabel(accessory.status) }}
+                  </span>
+                </div>
+              </div>
+              
+              <!-- 使用中状态提示 -->
+              <div v-if="accessory.status === 'in_use'" class="in-use-info">
+                <span class="in-use-icon">🔄</span>
+                <span>{{ formatInUseDuration(accessory.inUseStartedAt) }}</span>
               </div>
               
               <div class="card-body">
@@ -343,11 +405,35 @@ function getStatusLabel(status: string): string {
               </div>
 
               <div class="card-actions">
-                <button @click="openUsageModal(accessory)" class="usage-btn" :disabled="accessory.remainingQty <= 0">
+                <!-- 耐用型配件：显示开始/结束使用按钮 -->
+                <template v-if="accessory.usageType === 'durable'">
+                  <button 
+                    v-if="accessory.status !== 'in_use'" 
+                    @click="handleStartUsing(accessory)" 
+                    class="start-using-btn"
+                    :disabled="accessory.status === 'depleted'"
+                  >
+                    开始使用
+                  </button>
+                  <button 
+                    v-else 
+                    @click="openStopUsingModal(accessory)" 
+                    class="stop-using-btn"
+                  >
+                    结束使用
+                  </button>
+                </template>
+                <!-- 消耗型配件：显示记录使用按钮 -->
+                <button 
+                  v-else 
+                  @click="openUsageModal(accessory)" 
+                  class="usage-btn" 
+                  :disabled="accessory.remainingQty <= 0"
+                >
                   记录使用
                 </button>
                 <button @click="openEditModal(accessory)" class="edit-btn">编辑</button>
-                <button @click="confirmDelete(accessory.id)" class="delete-btn">删除</button>
+                <button @click="confirmDelete(accessory.id)" class="delete-btn" :disabled="accessory.status === 'in_use'">删除</button>
               </div>
             </div>
           </div>
@@ -377,40 +463,51 @@ function getStatusLabel(status: string): string {
           
           <div class="form-row">
             <div class="form-group">
+              <label for="usageType">使用类型 *</label>
+              <select id="usageType" v-model="formData.usageType" required>
+                <option v-for="(label, value) in USAGE_TYPE_LABELS" :key="value" :value="value">
+                  {{ label }}
+                </option>
+              </select>
+              <span class="form-hint">消耗型：使用后数量减少；耐用型：可反复使用</span>
+            </div>
+            <div class="form-group">
               <label for="brand">品牌/制造商</label>
               <input type="text" id="brand" v-model="formData.brand" placeholder="输入品牌" />
             </div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
               <label for="model">规格型号</label>
               <input type="text" id="model" v-model="formData.model" placeholder="输入型号" />
             </div>
-          </div>
-
-          <div class="form-row">
             <div class="form-group">
               <label for="price">购买价格</label>
               <input type="number" id="price" v-model.number="formData.price" step="0.01" min="0" placeholder="0.00" />
             </div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
               <label for="purchaseDate">购买日期</label>
               <input type="date" id="purchaseDate" v-model="formData.purchaseDate" />
+            </div>
+            <div class="form-group">
+              <label for="quantity">数量</label>
+              <input type="number" id="quantity" v-model.number="formData.quantity" min="1" />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label for="quantity">数量</label>
-              <input type="number" id="quantity" v-model.number="formData.quantity" min="1" />
-            </div>
-            <div class="form-group">
               <label for="lowStockThreshold">库存不足阈值</label>
               <input type="number" id="lowStockThreshold" v-model.number="formData.lowStockThreshold" min="0" placeholder="低于此数量提醒" />
             </div>
-          </div>
-
-          <div class="form-group">
-            <label for="replacementCycle">建议更换周期（天）</label>
-            <input type="number" id="replacementCycle" v-model.number="formData.replacementCycle" min="1" placeholder="多少天后提醒更换" />
+            <div class="form-group">
+              <label for="replacementCycle">建议更换周期（天）</label>
+              <input type="number" id="replacementCycle" v-model.number="formData.replacementCycle" min="1" placeholder="多少天后提醒更换" />
+            </div>
           </div>
 
           <div class="form-group">
@@ -513,6 +610,26 @@ function getStatusLabel(status: string): string {
         <div class="modal-actions">
           <button @click="closeCategoryModal" class="cancel-btn">关闭</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 结束使用弹窗 -->
+    <div v-if="showStopUsingModal" class="modal-overlay" @click.self="closeStopUsingModal">
+      <div class="modal">
+        <h2>结束使用 - {{ stopUsingAccessoryName }}</h2>
+        <form @submit.prevent="handleStopUsing">
+          <div class="form-group">
+            <label for="stopUsingPurpose">使用说明（可选）</label>
+            <textarea id="stopUsingPurpose" v-model="stopUsingPurpose" rows="3" placeholder="描述本次使用的情况..."></textarea>
+          </div>
+          <div v-if="accessoryStore.error" class="error-message">{{ accessoryStore.error }}</div>
+          <div class="modal-actions">
+            <button type="button" @click="closeStopUsingModal" class="cancel-btn">取消</button>
+            <button type="submit" class="submit-btn" :disabled="accessoryStore.isLoading">
+              {{ accessoryStore.isLoading ? '处理中...' : '确认结束' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -723,6 +840,57 @@ function getStatusLabel(status: string): string {
   color: #c62828;
 }
 
+.accessory-status.in_use {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.card-badges {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.usage-type-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.usage-type-badge.durable {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.in-use-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: #e3f2fd;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: #1565c0;
+}
+
+.in-use-icon {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.form-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
 .card-body {
   font-size: 0.9rem;
 }
@@ -804,6 +972,34 @@ function getStatusLabel(status: string): string {
 }
 
 .usage-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.start-using-btn {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.start-using-btn:hover:not(:disabled) {
+  background: #bbdefb;
+}
+
+.start-using-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stop-using-btn {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.stop-using-btn:hover {
+  background: #ffe0b2;
+}
+
+.delete-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -74,6 +74,17 @@ export interface CreateConsumableData {
   notes?: string;
 }
 
+export interface BatchCreateConsumableData extends CreateConsumableData {
+  quantity: number;
+  isOpened?: boolean;
+  openedAt?: Date;
+}
+
+export interface BatchCreateResponse {
+  consumables: ConsumableResponse[];
+  count: number;
+}
+
 export interface UpdateConsumableData {
   brandId?: string;
   typeId?: string;
@@ -100,6 +111,121 @@ function isValidHexColor(hex: string): boolean {
 }
 
 export class ConsumableService {
+  /**
+   * Batch create consumables for a user
+   * Uses transaction to ensure atomicity - all or nothing
+   */
+  static async batchCreate(
+    userId: string,
+    data: BatchCreateConsumableData
+  ): Promise<BatchCreateResponse> {
+    const {
+      brandId,
+      typeId,
+      color,
+      colorHex,
+      weight,
+      price,
+      purchaseDate,
+      notes,
+      quantity,
+      isOpened = false,
+      openedAt,
+    } = data;
+
+    // Validate quantity
+    if (quantity < 1) {
+      throw new Error('Quantity must be at least 1');
+    }
+
+    // Validate brand exists and belongs to user
+    const brand = await prisma.brand.findFirst({
+      where: { id: brandId, userId },
+    });
+    if (!brand) {
+      throw new Error('Brand not found');
+    }
+
+    // Validate type exists and belongs to user
+    const type = await prisma.consumableType.findFirst({
+      where: { id: typeId, userId },
+    });
+    if (!type) {
+      throw new Error('Consumable type not found');
+    }
+
+    // Validate colorHex format if provided
+    if (colorHex && !isValidHexColor(colorHex)) {
+      throw new Error('Invalid color format');
+    }
+
+    // Validate weight and price are positive
+    if (weight <= 0) {
+      throw new Error('Weight must be positive');
+    }
+    if (price < 0) {
+      throw new Error('Price must be positive');
+    }
+
+    // Determine opened status and date
+    const finalIsOpened = isOpened;
+    const finalOpenedAt = isOpened ? openedAt || new Date() : null;
+
+    // Use transaction to create all consumables atomically
+    const consumables = await prisma.$transaction(async (tx) => {
+      const created: Array<{
+        id: string;
+        userId: string;
+        brandId: string;
+        typeId: string;
+        color: string;
+        colorHex: string | null;
+        weight: number;
+        remainingWeight: number;
+        price: number;
+        purchaseDate: Date;
+        openedAt: Date | null;
+        isOpened: boolean;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        brand: { id: string; name: string };
+        type: { id: string; name: string };
+      }> = [];
+
+      for (let i = 0; i < quantity; i++) {
+        const consumable = await tx.consumable.create({
+          data: {
+            userId,
+            brandId,
+            typeId,
+            color,
+            colorHex,
+            weight,
+            remainingWeight: weight,
+            price,
+            purchaseDate,
+            notes,
+            isOpened: finalIsOpened,
+            openedAt: finalOpenedAt,
+          },
+          include: {
+            brand: { select: { id: true, name: true } },
+            type: { select: { id: true, name: true } },
+          },
+        });
+        created.push(consumable);
+      }
+
+      return created;
+    });
+
+    return {
+      consumables: consumables.map(addOpenedDays),
+      count: consumables.length,
+    };
+  }
+
   /**
    * Create a new consumable for a user
    */

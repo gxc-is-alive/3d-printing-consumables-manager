@@ -187,7 +187,9 @@ model Accessory {
   replacementCycle Int?      // 建议更换周期（天数）
   lastReplacedAt   DateTime? // 上次更换时间
   lowStockThreshold Int?     // 库存不足阈值
-  status           String    @default("available") // available, low_stock, depleted
+  status           String    @default("available") // available, in_use, low_stock, depleted
+  usageType        String    @default("consumable") // consumable（消耗型）, durable（耐用型）
+  inUseStartedAt   DateTime? // 开始使用时间（耐用型配件）
   notes            String?   // 备注
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -205,6 +207,7 @@ model AccessoryUsage {
   usageDate   DateTime
   quantity    Int      // 使用数量
   purpose     String?  // 用途说明
+  duration    Int?     // 使用时长（分钟），用于耐用型配件
   createdAt   DateTime @default(now())
 
   // Relations

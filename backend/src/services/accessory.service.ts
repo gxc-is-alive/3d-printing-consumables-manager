@@ -15,6 +15,8 @@ export interface AccessoryResponse {
   lastReplacedAt: Date | null;
   lowStockThreshold: number | null;
   status: string;
+  usageType: string;
+  inUseStartedAt: Date | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +34,7 @@ export interface AccessoryUsageResponse {
   usageDate: Date;
   quantity: number;
   purpose: string | null;
+  duration: number | null;
   createdAt: Date;
 }
 
@@ -45,6 +48,7 @@ export interface CreateAccessoryData {
   quantity?: number;
   replacementCycle?: number;
   lowStockThreshold?: number;
+  usageType?: 'consumable' | 'durable';
   notes?: string;
 }
 
@@ -84,10 +88,13 @@ export interface AccessoryAlert {
 }
 
 // 有效的配件状态
-export const VALID_ACCESSORY_STATUSES = ['available', 'low_stock', 'depleted'];
+export const VALID_ACCESSORY_STATUSES = ['available', 'in_use', 'low_stock', 'depleted'];
+
+// 有效的配件使用类型
+export const VALID_USAGE_TYPES = ['consumable', 'durable'];
 
 /**
- * 根据剩余数量和阈值计算配件状态
+ * 根据剩余数量和阈值计算配件状态（仅用于消耗型配件）
  */
 function calculateStatus(remainingQty: number, lowStockThreshold: number | null): string {
   if (remainingQty <= 0) {
@@ -114,6 +121,7 @@ export class AccessoryService {
       quantity = 1,
       replacementCycle,
       lowStockThreshold,
+      usageType = 'consumable',
       notes,
     } = data;
 
@@ -124,6 +132,11 @@ export class AccessoryService {
 
     if (!categoryId) {
       throw new Error('Category is required');
+    }
+
+    // 验证使用类型
+    if (!VALID_USAGE_TYPES.includes(usageType)) {
+      throw new Error('Invalid usage type');
     }
 
     // 验证分类存在
@@ -161,6 +174,7 @@ export class AccessoryService {
         remainingQty: quantity,
         replacementCycle,
         lowStockThreshold,
+        usageType,
         status,
         notes,
       },
@@ -169,7 +183,7 @@ export class AccessoryService {
       },
     });
 
-    return accessory;
+    return accessory as AccessoryResponse;
   }
 
   /**
@@ -196,7 +210,7 @@ export class AccessoryService {
       orderBy: [{ category: { name: 'asc' } }, { createdAt: 'desc' }],
     });
 
-    return accessories;
+    return accessories as AccessoryResponse[];
   }
 
   /**
@@ -217,7 +231,7 @@ export class AccessoryService {
       throw new Error('Accessory not found');
     }
 
-    return accessory;
+    return accessory as AccessoryResponse;
   }
 
   /**
@@ -267,13 +281,18 @@ export class AccessoryService {
       throw new Error('Remaining quantity cannot be negative');
     }
 
-    // 计算新状态
+    // 计算新状态（仅当配件不在使用中时）
     const newRemainingQty = data.remainingQty ?? existingAccessory.remainingQty;
     const newThreshold =
       data.lowStockThreshold !== undefined
         ? data.lowStockThreshold
         : existingAccessory.lowStockThreshold;
-    const newStatus = calculateStatus(newRemainingQty, newThreshold);
+
+    // 如果配件正在使用中，保持 in_use 状态
+    const newStatus =
+      existingAccessory.status === 'in_use'
+        ? 'in_use'
+        : calculateStatus(newRemainingQty, newThreshold);
 
     const accessory = await prisma.accessory.update({
       where: { id },
@@ -297,7 +316,7 @@ export class AccessoryService {
       },
     });
 
-    return accessory;
+    return accessory as AccessoryResponse;
   }
 
   /**
@@ -313,9 +332,105 @@ export class AccessoryService {
       throw new Error('Accessory not found');
     }
 
+    // 检查配件是否正在使用中
+    if (accessory.status === 'in_use') {
+      throw new Error('Cannot delete accessory that is in use');
+    }
+
     await prisma.accessory.delete({
       where: { id },
     });
+  }
+
+  /**
+   * 开始使用耐用型配件
+   */
+  static async startUsing(userId: string, id: string): Promise<AccessoryResponse> {
+    const accessory = await prisma.accessory.findFirst({
+      where: { id, userId },
+    });
+
+    if (!accessory) {
+      throw new Error('Accessory not found');
+    }
+
+    // 验证是耐用型配件
+    if (accessory.usageType !== 'durable') {
+      throw new Error('Only durable accessories can be marked as in use');
+    }
+
+    // 验证当前不在使用中
+    if (accessory.status === 'in_use') {
+      throw new Error('Accessory is already in use');
+    }
+
+    const updated = await prisma.accessory.update({
+      where: { id },
+      data: {
+        status: 'in_use',
+        inUseStartedAt: new Date(),
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+      },
+    });
+
+    return updated as AccessoryResponse;
+  }
+
+  /**
+   * 结束使用耐用型配件
+   */
+  static async stopUsing(userId: string, id: string, notes?: string): Promise<AccessoryResponse> {
+    const accessory = await prisma.accessory.findFirst({
+      where: { id, userId },
+    });
+
+    if (!accessory) {
+      throw new Error('Accessory not found');
+    }
+
+    // 验证当前在使用中
+    if (accessory.status !== 'in_use') {
+      throw new Error('Accessory is not in use');
+    }
+
+    // 计算使用时长（分钟）
+    const duration = accessory.inUseStartedAt
+      ? Math.floor((new Date().getTime() - accessory.inUseStartedAt.getTime()) / (1000 * 60))
+      : null;
+
+    // 计算新状态
+    const newStatus = calculateStatus(accessory.remainingQty, accessory.lowStockThreshold);
+
+    // 使用事务更新配件状态并创建使用记录
+    const [, updated] = await prisma.$transaction([
+      prisma.accessoryUsage.create({
+        data: {
+          userId,
+          accessoryId: id,
+          usageDate: new Date(),
+          quantity: 0, // 耐用型配件不消耗数量
+          purpose: notes,
+          duration,
+        },
+      }),
+      prisma.accessory.update({
+        where: { id },
+        data: {
+          status: newStatus,
+          inUseStartedAt: null,
+        },
+        include: {
+          category: { select: { id: true, name: true } },
+          usageRecords: {
+            orderBy: { usageDate: 'desc' },
+          },
+        },
+      }),
+    ]);
+
+    return updated as AccessoryResponse;
   }
 
   /**
@@ -376,7 +491,7 @@ export class AccessoryService {
       }),
     ]);
 
-    return updatedAccessory;
+    return updatedAccessory as AccessoryResponse;
   }
 
   /**

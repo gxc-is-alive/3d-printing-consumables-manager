@@ -244,4 +244,57 @@ router.post('/:id/usage', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
+/**
+ * POST /api/accessories/:id/start-using
+ * Start using a durable accessory
+ */
+router.post('/:id/start-using', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const accessory = await AccessoryService.startUsing(req.user.userId, req.params.id);
+    res.json({ success: true, data: accessory });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to start using accessory';
+    let status = 500;
+    if (message === 'Accessory not found') status = 404;
+    if (
+      message === 'Only durable accessories can be started' ||
+      message === 'Accessory is already in use'
+    )
+      status = 400;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+/**
+ * POST /api/accessories/:id/stop-using
+ * Stop using a durable accessory
+ */
+router.post('/:id/stop-using', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const { purpose } = req.body;
+    const accessory = await AccessoryService.stopUsing(
+      req.user.userId,
+      req.params.id,
+      purpose?.trim()
+    );
+    res.json({ success: true, data: accessory });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to stop using accessory';
+    let status = 500;
+    if (message === 'Accessory not found') status = 404;
+    if (message === 'Accessory is not currently in use') status = 400;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
 export default router;

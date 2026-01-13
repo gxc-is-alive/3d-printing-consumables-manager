@@ -37,6 +37,86 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
+ * POST /api/consumables/batch
+ * Batch create consumables
+ */
+router.post('/batch', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const {
+      brandId,
+      typeId,
+      color,
+      colorHex,
+      weight,
+      price,
+      purchaseDate,
+      notes,
+      quantity,
+      isOpened,
+      openedAt,
+    } = req.body;
+
+    // Validate required fields
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Field brandId is required' });
+      return;
+    }
+    if (!typeId) {
+      res.status(400).json({ success: false, error: 'Field typeId is required' });
+      return;
+    }
+    if (!color || typeof color !== 'string' || color.trim() === '') {
+      res.status(400).json({ success: false, error: 'Field color is required' });
+      return;
+    }
+    if (weight === undefined || typeof weight !== 'number' || weight <= 0) {
+      res.status(400).json({ success: false, error: 'Weight must be positive' });
+      return;
+    }
+    if (price === undefined || typeof price !== 'number' || price < 0) {
+      res.status(400).json({ success: false, error: 'Price must be positive' });
+      return;
+    }
+    if (!purchaseDate) {
+      res.status(400).json({ success: false, error: 'Field purchaseDate is required' });
+      return;
+    }
+    if (quantity === undefined || typeof quantity !== 'number' || quantity < 1) {
+      res.status(400).json({ success: false, error: 'Quantity must be at least 1' });
+      return;
+    }
+
+    const result = await ConsumableService.batchCreate(req.user.userId, {
+      brandId,
+      typeId,
+      color: color.trim(),
+      colorHex: colorHex?.trim(),
+      weight,
+      price,
+      purchaseDate: new Date(purchaseDate),
+      notes: notes?.trim(),
+      quantity,
+      isOpened: isOpened ?? false,
+      openedAt: openedAt ? new Date(openedAt) : undefined,
+    });
+
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create consumables';
+    let status = 500;
+    if (message === 'Brand not found' || message === 'Consumable type not found') status = 404;
+    if (message === 'Invalid color format' || message === 'Quantity must be at least 1')
+      status = 400;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+/**
  * POST /api/consumables
  * Create a new consumable
  */
