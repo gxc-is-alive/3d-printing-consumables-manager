@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue';
 import { useBrandStore, type Brand, type BrandFormData } from '@/stores/brand';
 import { useBrandConfigFileStore, type BrandConfigFile } from '@/stores/brandConfigFile';
+import { useConsumableTypeStore } from '@/stores/consumableType';
+import { useBrandTypeStore, type BrandTypeConfig } from '@/stores/brandType';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 
@@ -9,6 +11,8 @@ const router = useRouter();
 const authStore = useAuthStore();
 const brandStore = useBrandStore();
 const configFileStore = useBrandConfigFileStore();
+const typeStore = useConsumableTypeStore();
+const brandTypeStore = useBrandTypeStore();
 
 const showForm = ref(false);
 const editingBrand = ref<Brand | null>(null);
@@ -25,8 +29,22 @@ const currentBrandForFiles = ref<Brand | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const deleteFileConfirmId = ref<string | null>(null);
 
+// 类型配置相关状态
+const showTypeConfig = ref(false);
+const currentBrandForTypes = ref<Brand | null>(null);
+const typeConfigs = ref<Record<string, {
+  printTempMin: number | null;
+  printTempMax: number | null;
+  bedTempMin: number | null;
+  bedTempMax: number | null;
+  notes: string;
+}>>({});
+
 onMounted(async () => {
-  await brandStore.fetchBrands();
+  await Promise.all([
+    brandStore.fetchBrands(),
+    typeStore.fetchTypes()
+  ]);
 });
 
 function openCreateForm() {
@@ -160,6 +178,78 @@ function formatDate(dateStr: string): string {
     minute: '2-digit',
   });
 }
+
+// 类型配置管理函数
+async function openTypeConfig(brand: Brand) {
+  currentBrandForTypes.value = brand;
+  brandTypeStore.clearError();
+  showTypeConfig.value = true;
+  
+  // 初始化所有类型的配置
+  typeConfigs.value = {};
+  for (const type of typeStore.types) {
+    typeConfigs.value[type.id] = {
+      printTempMin: null,
+      printTempMax: null,
+      bedTempMin: null,
+      bedTempMax: null,
+      notes: ''
+    };
+  }
+  
+  // 获取已有的配置
+  const existingConfigs = await brandTypeStore.fetchByBrand(brand.id);
+  for (const config of existingConfigs) {
+    if (typeConfigs.value[config.typeId]) {
+      typeConfigs.value[config.typeId] = {
+        printTempMin: config.printTempMin,
+        printTempMax: config.printTempMax,
+        bedTempMin: config.bedTempMin,
+        bedTempMax: config.bedTempMax,
+        notes: config.notes || ''
+      };
+    }
+  }
+}
+
+function closeTypeConfig() {
+  showTypeConfig.value = false;
+  currentBrandForTypes.value = null;
+  typeConfigs.value = {};
+  brandTypeStore.clearError();
+}
+
+async function saveTypeConfigs() {
+  if (!currentBrandForTypes.value) return;
+  
+  // 构建配置数组，只包含有数据的配置
+  const configs: BrandTypeConfig[] = [];
+  for (const typeId in typeConfigs.value) {
+    const config = typeConfigs.value[typeId];
+    // 只要有任何一个字段有值，就保存
+    if (config.printTempMin !== null || config.printTempMax !== null ||
+        config.bedTempMin !== null || config.bedTempMax !== null ||
+        config.notes) {
+      configs.push({
+        typeId,
+        printTempMin: config.printTempMin,
+        printTempMax: config.printTempMax,
+        bedTempMin: config.bedTempMin,
+        bedTempMax: config.bedTempMax,
+        notes: config.notes || null
+      });
+    }
+  }
+  
+  const success = await brandTypeStore.saveBrandTypeConfigs(
+    currentBrandForTypes.value.id,
+    configs
+  );
+  
+  if (success) {
+    closeTypeConfig();
+  }
+}
 </script>
 
 <template>
@@ -201,6 +291,7 @@ function formatDate(dateStr: string): string {
             </a>
           </div>
           <div class="brand-actions">
+            <button @click="openTypeConfig(brand)" class="btn btn-success">配置类型</button>
             <button @click="openConfigFiles(brand)" class="btn btn-info">配置文件</button>
             <button @click="openEditForm(brand)" class="btn btn-secondary">编辑</button>
             <button @click="confirmDelete(brand.id)" class="btn btn-danger">删除</button>
@@ -353,6 +444,96 @@ function formatDate(dateStr: string): string {
           </button>
           <button @click="handleDeleteFile" class="btn btn-danger" :disabled="configFileStore.isLoading">
             {{ configFileStore.isLoading ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Type Config Modal -->
+    <div v-if="showTypeConfig" class="modal-overlay" @click.self="closeTypeConfig">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h2>配置类型 - {{ currentBrandForTypes?.name }}</h2>
+          <button @click="closeTypeConfig" class="close-btn">&times;</button>
+        </div>
+
+        <div v-if="brandTypeStore.error" class="error-message">
+          {{ brandTypeStore.error }}
+        </div>
+
+        <div v-if="typeStore.types.length === 0" class="empty-state">
+          <p>暂无耗材类型</p>
+          <p>请先在"类型管理"中添加耗材类型</p>
+        </div>
+
+        <div v-else class="type-config-list">
+          <div v-for="type in typeStore.types" :key="type.id" class="type-config-item">
+            <div class="type-header">
+              <h4>{{ type.name }}</h4>
+              <span v-if="type.description" class="type-desc">{{ type.description }}</span>
+            </div>
+            <div class="type-config-form">
+              <div class="config-row">
+                <div class="config-field">
+                  <label>打印温度最小值 (°C)</label>
+                  <input
+                    type="number"
+                    v-model.number="typeConfigs[type.id].printTempMin"
+                    placeholder="如: 190"
+                    :disabled="brandTypeStore.isLoading"
+                  />
+                </div>
+                <div class="config-field">
+                  <label>打印温度最大值 (°C)</label>
+                  <input
+                    type="number"
+                    v-model.number="typeConfigs[type.id].printTempMax"
+                    placeholder="如: 220"
+                    :disabled="brandTypeStore.isLoading"
+                  />
+                </div>
+              </div>
+              <div class="config-row">
+                <div class="config-field">
+                  <label>热床温度最小值 (°C)</label>
+                  <input
+                    type="number"
+                    v-model.number="typeConfigs[type.id].bedTempMin"
+                    placeholder="如: 50"
+                    :disabled="brandTypeStore.isLoading"
+                  />
+                </div>
+                <div class="config-field">
+                  <label>热床温度最大值 (°C)</label>
+                  <input
+                    type="number"
+                    v-model.number="typeConfigs[type.id].bedTempMax"
+                    placeholder="如: 70"
+                    :disabled="brandTypeStore.isLoading"
+                  />
+                </div>
+              </div>
+              <div class="config-row">
+                <div class="config-field config-field-full">
+                  <label>备注</label>
+                  <input
+                    type="text"
+                    v-model="typeConfigs[type.id].notes"
+                    placeholder="可选备注信息"
+                    :disabled="brandTypeStore.isLoading"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions" v-if="typeStore.types.length > 0">
+          <button @click="closeTypeConfig" class="btn btn-secondary" :disabled="brandTypeStore.isLoading">
+            取消
+          </button>
+          <button @click="saveTypeConfigs" class="btn btn-primary" :disabled="brandTypeStore.isLoading">
+            {{ brandTypeStore.isLoading ? '保存中...' : '保存配置' }}
           </button>
         </div>
       </div>
@@ -699,5 +880,94 @@ function formatDate(dateStr: string): string {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+/* 类型配置相关样式 */
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #218838;
+}
+
+.type-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.type-config-item {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid #eee;
+}
+
+.type-header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.type-header h4 {
+  margin: 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.type-desc {
+  display: block;
+  color: #666;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.type-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.config-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.config-field {
+  flex: 1;
+}
+
+.config-field-full {
+  flex: 1 1 100%;
+}
+
+.config-field label {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 0.25rem;
+}
+
+.config-field input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.config-field input:focus {
+  outline: none;
+  border-color: #4a90d9;
+}
+
+.config-field input:disabled {
+  background: #f5f5f5;
 }
 </style>

@@ -37,7 +37,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { name, description, printTempMin, printTempMax, bedTempMin, bedTempMax } = req.body;
+    const { name, description } = req.body;
 
     // Validate required fields
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -45,31 +45,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Validate temperature fields if provided
-    if (printTempMin !== undefined && (typeof printTempMin !== 'number' || printTempMin < 0)) {
-      res.status(400).json({ success: false, error: 'printTempMin must be a positive number' });
-      return;
-    }
-    if (printTempMax !== undefined && (typeof printTempMax !== 'number' || printTempMax < 0)) {
-      res.status(400).json({ success: false, error: 'printTempMax must be a positive number' });
-      return;
-    }
-    if (bedTempMin !== undefined && (typeof bedTempMin !== 'number' || bedTempMin < 0)) {
-      res.status(400).json({ success: false, error: 'bedTempMin must be a positive number' });
-      return;
-    }
-    if (bedTempMax !== undefined && (typeof bedTempMax !== 'number' || bedTempMax < 0)) {
-      res.status(400).json({ success: false, error: 'bedTempMax must be a positive number' });
-      return;
-    }
-
     const consumableType = await ConsumableTypeService.create(req.user.userId, {
       name: name.trim(),
       description: description?.trim(),
-      printTempMin,
-      printTempMax,
-      bedTempMin,
-      bedTempMax,
     });
 
     res.status(201).json({ success: true, data: consumableType });
@@ -111,7 +89,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { name, description, printTempMin, printTempMax, bedTempMin, bedTempMax } = req.body;
+    const { name, description } = req.body;
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
@@ -119,31 +97,9 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Validate temperature fields if provided
-    if (printTempMin !== undefined && (typeof printTempMin !== 'number' || printTempMin < 0)) {
-      res.status(400).json({ success: false, error: 'printTempMin must be a positive number' });
-      return;
-    }
-    if (printTempMax !== undefined && (typeof printTempMax !== 'number' || printTempMax < 0)) {
-      res.status(400).json({ success: false, error: 'printTempMax must be a positive number' });
-      return;
-    }
-    if (bedTempMin !== undefined && (typeof bedTempMin !== 'number' || bedTempMin < 0)) {
-      res.status(400).json({ success: false, error: 'bedTempMin must be a positive number' });
-      return;
-    }
-    if (bedTempMax !== undefined && (typeof bedTempMax !== 'number' || bedTempMax < 0)) {
-      res.status(400).json({ success: false, error: 'bedTempMax must be a positive number' });
-      return;
-    }
-
     const consumableType = await ConsumableTypeService.update(req.user.userId, req.params.id, {
       name: name?.trim(),
       description: description?.trim(),
-      printTempMin,
-      printTempMax,
-      bedTempMin,
-      bedTempMax,
     });
 
     res.json({ success: true, data: consumableType });

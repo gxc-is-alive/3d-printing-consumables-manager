@@ -74,10 +74,6 @@ export const backupService = {
             data: {
               name: type.name,
               description: type.description,
-              printTempMin: type.printTempMin,
-              printTempMax: type.printTempMax,
-              bedTempMin: type.bedTempMin,
-              bedTempMax: type.bedTempMax,
               userId,
             },
           });

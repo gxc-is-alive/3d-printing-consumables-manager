@@ -29,6 +29,7 @@ model User {
   accessoryCategories AccessoryCategory[]
   accessories         Accessory[]
   accessoryUsages     AccessoryUsage[]
+  brandTypes          BrandType[]
 }
 
 model Brand {
@@ -44,27 +45,47 @@ model Brand {
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   consumables Consumable[]
   configFiles BrandConfigFile[]
+  brandTypes  BrandType[]
 
   @@unique([userId, name])
 }
 
 model ConsumableType {
-  id           String   @id @default(uuid())
-  userId       String
-  name         String
-  description  String?
-  printTempMin Int?
-  printTempMax Int?
-  bedTempMin   Int?
-  bedTempMax   Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   consumables Consumable[]
+  brandTypes  BrandType[]
 
   @@unique([userId, name])
+}
+
+// 品牌-类型关联表：存储特定品牌特定类型的温度参数
+model BrandType {
+  id           String   @id @default(uuid())
+  userId       String
+  brandId      String
+  typeId       String
+  printTempMin Int?
+  printTempMax Int?
+  bedTempMin   Int?
+  bedTempMax   Int?
+  notes        String?  // 该品牌该类型的特殊说明
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  type  ConsumableType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, typeId])
 }
 
 model Consumable {

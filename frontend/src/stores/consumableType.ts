@@ -7,10 +7,6 @@ export interface ConsumableType {
   userId: string;
   name: string;
   description: string | null;
-  printTempMin: number | null;
-  printTempMax: number | null;
-  bedTempMin: number | null;
-  bedTempMax: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,10 +14,6 @@ export interface ConsumableType {
 export interface ConsumableTypeFormData {
   name: string;
   description?: string;
-  printTempMin?: number;
-  printTempMax?: number;
-  bedTempMin?: number;
-  bedTempMax?: number;
 }
 
 interface ConsumableTypeResponse {

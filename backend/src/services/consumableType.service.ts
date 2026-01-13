@@ -5,10 +5,6 @@ export interface ConsumableTypeResponse {
   userId: string;
   name: string;
   description: string | null;
-  printTempMin: number | null;
-  printTempMax: number | null;
-  bedTempMin: number | null;
-  bedTempMax: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,19 +12,11 @@ export interface ConsumableTypeResponse {
 export interface CreateConsumableTypeData {
   name: string;
   description?: string;
-  printTempMin?: number;
-  printTempMax?: number;
-  bedTempMin?: number;
-  bedTempMax?: number;
 }
 
 export interface UpdateConsumableTypeData {
   name?: string;
   description?: string;
-  printTempMin?: number;
-  printTempMax?: number;
-  bedTempMin?: number;
-  bedTempMax?: number;
 }
 
 export class ConsumableTypeService {
@@ -39,7 +27,7 @@ export class ConsumableTypeService {
     userId: string,
     data: CreateConsumableTypeData
   ): Promise<ConsumableTypeResponse> {
-    const { name, description, printTempMin, printTempMax, bedTempMin, bedTempMax } = data;
+    const { name, description } = data;
 
     // Check if type name already exists for this user
     const existingType = await prisma.consumableType.findUnique({
@@ -55,10 +43,6 @@ export class ConsumableTypeService {
         userId,
         name,
         description,
-        printTempMin,
-        printTempMax,
-        bedTempMin,
-        bedTempMax,
       },
     });
   }
@@ -121,10 +105,6 @@ export class ConsumableTypeService {
       data: {
         name: data.name,
         description: data.description,
-        printTempMin: data.printTempMin,
-        printTempMax: data.printTempMax,
-        bedTempMin: data.bedTempMin,
-        bedTempMax: data.bedTempMax,
       },
     });
   }

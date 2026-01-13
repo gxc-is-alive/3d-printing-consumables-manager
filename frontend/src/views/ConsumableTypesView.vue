@@ -13,10 +13,6 @@ const editingType = ref<ConsumableType | null>(null);
 const formData = ref<ConsumableTypeFormData>({
   name: '',
   description: '',
-  printTempMin: undefined,
-  printTempMax: undefined,
-  bedTempMin: undefined,
-  bedTempMax: undefined,
 });
 const deleteConfirmId = ref<string | null>(null);
 
@@ -29,10 +25,6 @@ function openCreateForm() {
   formData.value = {
     name: '',
     description: '',
-    printTempMin: undefined,
-    printTempMax: undefined,
-    bedTempMin: undefined,
-    bedTempMax: undefined,
   };
   typeStore.clearError();
   showForm.value = true;
@@ -43,10 +35,6 @@ function openEditForm(type: ConsumableType) {
   formData.value = {
     name: type.name,
     description: type.description || '',
-    printTempMin: type.printTempMin ?? undefined,
-    printTempMax: type.printTempMax ?? undefined,
-    bedTempMin: type.bedTempMin ?? undefined,
-    bedTempMax: type.bedTempMax ?? undefined,
   };
   typeStore.clearError();
   showForm.value = true;
@@ -58,23 +46,14 @@ function closeForm() {
   formData.value = {
     name: '',
     description: '',
-    printTempMin: undefined,
-    printTempMax: undefined,
-    bedTempMin: undefined,
-    bedTempMax: undefined,
   };
   typeStore.clearError();
 }
 
 async function handleSubmit() {
-  // Convert empty strings to undefined for optional number fields
   const submitData: ConsumableTypeFormData = {
     name: formData.value.name,
     description: formData.value.description || undefined,
-    printTempMin: formData.value.printTempMin,
-    printTempMax: formData.value.printTempMax,
-    bedTempMin: formData.value.bedTempMin,
-    bedTempMax: formData.value.bedTempMax,
   };
 
   if (editingType.value) {
@@ -111,13 +90,6 @@ async function handleLogout() {
   await authStore.logout();
   router.push('/login');
 }
-
-function formatTempRange(min: number | null, max: number | null): string {
-  if (min === null && max === null) return '-';
-  if (min !== null && max !== null) return `${min}°C - ${max}°C`;
-  if (min !== null) return `≥${min}°C`;
-  return `≤${max}°C`;
-}
 </script>
 
 <template>
@@ -134,6 +106,10 @@ function formatTempRange(min: number | null, max: number | null): string {
     </header>
 
     <main class="page-content">
+      <div class="info-banner">
+        <p>💡 类型只定义耗材的基本分类（如 PLA、PETG、ABS）。温度参数在品牌管理中按品牌+类型配置。</p>
+      </div>
+
       <div class="toolbar">
         <button @click="openCreateForm" class="btn btn-primary">
           + 新增类型
@@ -154,12 +130,6 @@ function formatTempRange(min: number | null, max: number | null): string {
           <div class="type-info">
             <h3>{{ type.name }}</h3>
             <p v-if="type.description" class="description">{{ type.description }}</p>
-            <div class="temp-info">
-              <span class="temp-label">打印温度:</span>
-              <span class="temp-value">{{ formatTempRange(type.printTempMin, type.printTempMax) }}</span>
-              <span class="temp-label">热床温度:</span>
-              <span class="temp-value">{{ formatTempRange(type.bedTempMin, type.bedTempMax) }}</span>
-            </div>
           </div>
           <div class="type-actions">
             <button @click="openEditForm(type)" class="btn btn-secondary">编辑</button>
@@ -194,58 +164,6 @@ function formatTempRange(min: number | null, max: number | null): string {
               rows="3"
               :disabled="typeStore.isLoading"
             ></textarea>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="printTempMin">打印温度最低 (°C)</label>
-              <input
-                id="printTempMin"
-                v-model.number="formData.printTempMin"
-                type="number"
-                min="0"
-                max="400"
-                placeholder="例如: 190"
-                :disabled="typeStore.isLoading"
-              />
-            </div>
-            <div class="form-group">
-              <label for="printTempMax">打印温度最高 (°C)</label>
-              <input
-                id="printTempMax"
-                v-model.number="formData.printTempMax"
-                type="number"
-                min="0"
-                max="400"
-                placeholder="例如: 220"
-                :disabled="typeStore.isLoading"
-              />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="bedTempMin">热床温度最低 (°C)</label>
-              <input
-                id="bedTempMin"
-                v-model.number="formData.bedTempMin"
-                type="number"
-                min="0"
-                max="150"
-                placeholder="例如: 50"
-                :disabled="typeStore.isLoading"
-              />
-            </div>
-            <div class="form-group">
-              <label for="bedTempMax">热床温度最高 (°C)</label>
-              <input
-                id="bedTempMax"
-                v-model.number="formData.bedTempMax"
-                type="number"
-                min="0"
-                max="150"
-                placeholder="例如: 70"
-                :disabled="typeStore.isLoading"
-              />
-            </div>
           </div>
           <div v-if="typeStore.error" class="error-message">
             {{ typeStore.error }}
@@ -348,6 +266,20 @@ function formatTempRange(min: number | null, max: number | null): string {
   margin: 0 auto;
 }
 
+.info-banner {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.info-banner p {
+  margin: 0;
+  color: #1565c0;
+  font-size: 0.95rem;
+}
+
 .toolbar {
   margin-bottom: 1.5rem;
 }
@@ -411,7 +343,7 @@ function formatTempRange(min: number | null, max: number | null): string {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .type-info h3 {
@@ -421,23 +353,7 @@ function formatTempRange(min: number | null, max: number | null): string {
 
 .type-info .description {
   color: #666;
-  margin: 0 0 0.5rem 0;
-}
-
-.temp-info {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  font-size: 0.9rem;
-}
-
-.temp-label {
-  color: #888;
-}
-
-.temp-value {
-  color: #333;
-  margin-right: 1rem;
+  margin: 0;
 }
 
 .type-actions {
@@ -485,15 +401,6 @@ function formatTempRange(min: number | null, max: number | null): string {
 
 .form-group {
   margin-bottom: 1rem;
-}
-
-.form-row {
-  display: flex;
-  gap: 1rem;
-}
-
-.form-row .form-group {
-  flex: 1;
 }
 
 .form-group label {
