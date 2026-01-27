@@ -877,6 +877,7 @@ function formatInUseDuration(startedAt: string | null | undefined): string {
 
 .in-use-icon {
   animation: spin 2s linear infinite;
+  border: none;
 }
 
 @keyframes spin {
@@ -977,8 +978,13 @@ function formatInUseDuration(startedAt: string | null | undefined): string {
 }
 
 .start-using-btn {
+  padding: 0.4rem 0.8rem;
   background: #e3f2fd;
   color: #1565c0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .start-using-btn:hover:not(:disabled) {
@@ -991,8 +997,13 @@ function formatInUseDuration(startedAt: string | null | undefined): string {
 }
 
 .stop-using-btn {
+  padding: 0.4rem 0.8rem;
   background: #fff3e0;
   color: #e65100;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .stop-using-btn:hover {

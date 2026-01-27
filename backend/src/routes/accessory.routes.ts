@@ -77,6 +77,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       quantity,
       replacementCycle,
       lowStockThreshold,
+      usageType,
       notes,
     } = req.body;
 
@@ -101,6 +102,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       quantity: quantity ? parseInt(quantity, 10) : undefined,
       replacementCycle: replacementCycle ? parseInt(replacementCycle, 10) : undefined,
       lowStockThreshold: lowStockThreshold ? parseInt(lowStockThreshold, 10) : undefined,
+      usageType: usageType || 'consumable',
       notes: notes?.trim(),
     });
 

@@ -2,7 +2,21 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 
-const routes: RouteRecordRaw[] = [
+// 检测是否为移动设备
+function checkIsMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  const width =
+    window.innerWidth || document.documentElement.clientWidth || 1024;
+  const ua = navigator.userAgent || "";
+  const isMobileUA =
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i.test(
+      ua
+    );
+  return width < 768 || (isMobileUA && width < 1024);
+}
+
+// PC端路由
+const desktopRoutes: RouteRecordRaw[] = [
   {
     path: "/",
     name: "Home",
@@ -57,6 +71,80 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/AccessoriesView.vue"),
     meta: { requiresAuth: true },
   },
+];
+
+// 移动端路由
+const mobileRoutes: RouteRecordRaw[] = [
+  {
+    path: "/m",
+    name: "MobileHome",
+    component: () => import("@/views/mobile/MobileHome.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/dashboard",
+    name: "MobileDashboard",
+    component: () => import("@/views/mobile/MobileDashboard.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/consumables",
+    name: "MobileConsumables",
+    component: () => import("@/views/mobile/MobileConsumables.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/accessories",
+    name: "MobileAccessories",
+    component: () => import("@/views/mobile/MobileAccessories.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/usages",
+    name: "MobileUsages",
+    component: () => import("@/views/mobile/MobileUsages.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/maintenance",
+    name: "MobileMaintenance",
+    component: () => import("@/views/mobile/MobileMaintenance.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/more",
+    name: "MobileMore",
+    component: () => import("@/views/mobile/MobileMore.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/brands",
+    name: "MobileBrands",
+    component: () => import("@/views/mobile/MobileBrands.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/types",
+    name: "MobileTypes",
+    component: () => import("@/views/mobile/MobileTypes.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/backup",
+    name: "MobileBackup",
+    component: () => import("@/views/mobile/MobileBackup.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/login",
+    name: "MobileLogin",
+    component: () => import("@/views/mobile/MobileLogin.vue"),
+    meta: { requiresAuth: false },
+  },
+];
+
+// 公共路由
+const commonRoutes: RouteRecordRaw[] = [
   {
     path: "/login",
     name: "Login",
@@ -77,6 +165,12 @@ const routes: RouteRecordRaw[] = [
   },
 ];
 
+const routes: RouteRecordRaw[] = [
+  ...desktopRoutes,
+  ...mobileRoutes,
+  ...commonRoutes,
+];
+
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
@@ -85,12 +179,64 @@ const router = createRouter({
 // Navigation guard for authentication
 router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore();
+  const isMobile = checkIsMobile();
+
+  // 设备类型路由重定向
+  // 如果是移动设备访问PC路由，重定向到移动端
+  if (
+    isMobile &&
+    !to.path.startsWith("/m") &&
+    !to.path.startsWith("/login") &&
+    !to.path.startsWith("/register") &&
+    !to.path.startsWith("/donate")
+  ) {
+    const mobileRouteMap: Record<string, string> = {
+      "/": "/m",
+      "/dashboard": "/m/dashboard",
+      "/consumables": "/m/consumables",
+      "/accessories": "/m/accessories",
+      "/usages": "/m/usages",
+      "/maintenance": "/m/maintenance",
+      "/brands": "/m/brands",
+      "/types": "/m/types",
+      "/backup": "/m/backup",
+    };
+    const mobileRoute = mobileRouteMap[to.path] || "/m";
+    console.log("[Router] 移动设备访问PC路由，重定向到:", mobileRoute);
+    next(mobileRoute);
+    return;
+  }
+
+  // 如果是PC设备访问移动端路由，重定向到PC端
+  if (!isMobile && to.path.startsWith("/m")) {
+    const desktopRouteMap: Record<string, string> = {
+      "/m": "/",
+      "/m/dashboard": "/dashboard",
+      "/m/consumables": "/consumables",
+      "/m/accessories": "/accessories",
+      "/m/usages": "/usages",
+      "/m/maintenance": "/maintenance",
+      "/m/brands": "/brands",
+      "/m/types": "/types",
+      "/m/backup": "/backup",
+      "/m/more": "/",
+    };
+    const desktopRoute = desktopRouteMap[to.path] || "/";
+    console.log("[Router] PC设备访问移动端路由，重定向到:", desktopRoute);
+    next(desktopRoute);
+    return;
+  }
 
   // If route requires auth
   if (to.meta.requiresAuth) {
     // Check if we have a token
     if (!authStore.token) {
-      next({ name: "Login" });
+      // 移动设备跳转到移动端登录页
+      if (isMobile) {
+        next({ name: "MobileLogin" });
+      } else {
+        next({ name: "Login" });
+      }
       return;
     }
 
@@ -98,7 +244,11 @@ router.beforeEach(async (to, _from, next) => {
     if (!authStore.user) {
       const success = await authStore.fetchCurrentUser();
       if (!success) {
-        next({ name: "Login" });
+        if (isMobile) {
+          next({ name: "MobileLogin" });
+        } else {
+          next({ name: "Login" });
+        }
         return;
       }
     }
@@ -106,10 +256,16 @@ router.beforeEach(async (to, _from, next) => {
 
   // If user is authenticated and trying to access login/register, redirect to home
   if (
-    (to.name === "Login" || to.name === "Register") &&
+    (to.name === "Login" ||
+      to.name === "Register" ||
+      to.name === "MobileLogin") &&
     authStore.isAuthenticated
   ) {
-    next({ name: "Home" });
+    if (isMobile) {
+      next({ name: "MobileHome" });
+    } else {
+      next({ name: "Home" });
+    }
     return;
   }
 

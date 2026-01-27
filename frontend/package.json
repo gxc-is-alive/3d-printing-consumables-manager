@@ -12,8 +12,10 @@
         "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix"
     },
     "dependencies": {
+        "@vant/use": "^1.6.0",
         "axios": "^1.6.7",
         "pinia": "^2.1.7",
+        "vant": "^4.9.22",
         "vue": "^3.4.15",
         "vue-router": "^4.2.5"
     },
