@@ -244,7 +244,7 @@ async function handleLogout() {
             <label for="consumableId">耗材 *</label>
             <select id="consumableId" v-model="formData.consumableId" required :disabled="usageRecordStore.isLoading">
               <option value="">请选择耗材</option>
-              <option v-for="c in consumableStore.consumables" :key="c.id" :value="c.id">
+              <option v-for="c in consumableStore.consumables.filter(c => c.isOpened)" :key="c.id" :value="c.id">
                 {{ getConsumableSelectLabel(c) }}
               </option>
             </select>

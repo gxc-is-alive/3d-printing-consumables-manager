@@ -28,7 +28,7 @@ defineEmits<{
 <template>
   <div class="data-card" @click="$emit('click')">
     <!-- 颜色条 -->
-    <div v-if="colorBar" class="color-bar" :style="{ backgroundColor: colorBar }" />
+    <div v-if="colorBar" class="color-bar" :style="{ background: colorBar }" />
     
     <div class="card-body">
       <!-- 头部：标题和标签 -->

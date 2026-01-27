@@ -29,12 +29,14 @@ const formData = ref<UsageRecordFormData>({
   notes: '',
 });
 
-// 耗材选项 (Picker 格式)
+// 耗材选项 (Picker 格式) - 只显示已开封的耗材
 const consumablePickerOptions = computed(() =>
-  consumableStore.consumables.map(c => ({
-    text: `${c.brand?.name} ${c.color} (剩余${c.remainingWeight}g)`,
-    value: c.id,
-  }))
+  consumableStore.consumables
+    .filter(c => c.isOpened) // 只显示已开封的
+    .map(c => ({
+      text: `${c.brand?.name} ${c.color} (剩余${c.remainingWeight}g)`,
+      value: c.id,
+    }))
 );
 
 // 获取选中的耗材名称

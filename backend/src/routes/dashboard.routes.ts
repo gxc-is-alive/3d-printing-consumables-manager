@@ -61,4 +61,23 @@ router.get('/stats', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+/**
+ * GET /api/dashboard/price-stats
+ * Get price trend statistics with average, min, max
+ */
+router.get('/price-stats', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const priceStats = await DashboardService.getPriceStats(req.user.userId);
+    res.json({ success: true, data: priceStats });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to get price stats';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 export default router;

@@ -52,6 +52,22 @@ export interface InventoryStats {
   lowStockItems: LowStockItem[];
 }
 
+export interface PriceTrendItem {
+  date: string;
+  price: number;
+  brandName: string;
+  typeName: string;
+  color: string;
+}
+
+export interface PriceStats {
+  trend: PriceTrendItem[];
+  averagePrice: number;
+  minPrice: number;
+  maxPrice: number;
+  totalCount: number;
+}
+
 interface InventoryResponse {
   success: boolean;
   data?: InventoryOverview;
@@ -64,9 +80,16 @@ interface StatsResponse {
   error?: string;
 }
 
+interface PriceStatsResponse {
+  success: boolean;
+  data?: PriceStats;
+  error?: string;
+}
+
 export const useDashboardStore = defineStore("dashboard", () => {
   const inventory = ref<InventoryOverview | null>(null);
   const stats = ref<InventoryStats | null>(null);
+  const priceStats = ref<PriceStats | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
@@ -79,7 +102,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
     error.value = null;
     try {
       const response = await apiClient.get<InventoryResponse>(
-        "/dashboard/inventory"
+        "/dashboard/inventory",
       );
       if (response.data.success && response.data.data) {
         inventory.value = response.data.data;
@@ -144,14 +167,43 @@ export const useDashboardStore = defineStore("dashboard", () => {
     }
   }
 
+  async function fetchPriceStats(): Promise<boolean> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.get<PriceStatsResponse>(
+        "/dashboard/price-stats",
+      );
+      if (response.data.success && response.data.data) {
+        priceStats.value = response.data.data;
+        return true;
+      }
+      error.value = response.data.error || "Failed to fetch price stats";
+      return false;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value =
+          axiosError.response?.data?.error || "Failed to fetch price stats";
+      } else {
+        error.value = "Failed to fetch price stats";
+      }
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   return {
     inventory,
     stats,
+    priceStats,
     isLoading,
     error,
     clearError,
     fetchInventory,
     fetchStats,
     fetchAll,
+    fetchPriceStats,
   };
 });

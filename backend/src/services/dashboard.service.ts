@@ -44,6 +44,22 @@ export interface LowStockItem {
   percentRemaining: number;
 }
 
+export interface PriceTrendItem {
+  date: string;
+  price: number;
+  brandName: string;
+  typeName: string;
+  color: string;
+}
+
+export interface PriceStats {
+  trend: PriceTrendItem[];
+  averagePrice: number;
+  minPrice: number;
+  maxPrice: number;
+  totalCount: number;
+}
+
 export interface InventoryOverview {
   byBrand: InventoryGroupByBrand[];
   byType: InventoryGroupByType[];
@@ -226,6 +242,50 @@ export class DashboardService {
     // Filter case-insensitively in JavaScript since SQLite doesn't support mode: 'insensitive'
     const filtered = consumables.filter((c) => c.color.toLowerCase() === color.toLowerCase());
     return filtered.reduce((sum, c) => sum + c.remainingWeight, 0);
+  }
+
+  /**
+   * Get price trend statistics
+   * Returns price history sorted by purchase date with average, min, max
+   */
+  static async getPriceStats(userId: string): Promise<PriceStats> {
+    const consumables = await prisma.consumable.findMany({
+      where: { userId },
+      include: {
+        brand: { select: { name: true } },
+        type: { select: { name: true } },
+      },
+      orderBy: { purchaseDate: 'asc' },
+    });
+
+    if (consumables.length === 0) {
+      return {
+        trend: [],
+        averagePrice: 0,
+        minPrice: 0,
+        maxPrice: 0,
+        totalCount: 0,
+      };
+    }
+
+    const trend: PriceTrendItem[] = consumables.map((c) => ({
+      date: c.purchaseDate.toISOString().split('T')[0],
+      price: c.price,
+      brandName: c.brand.name,
+      typeName: c.type.name,
+      color: c.color,
+    }));
+
+    const prices = consumables.map((c) => c.price);
+    const totalPrice = prices.reduce((sum, p) => sum + p, 0);
+
+    return {
+      trend,
+      averagePrice: totalPrice / prices.length,
+      minPrice: Math.min(...prices),
+      maxPrice: Math.max(...prices),
+      totalCount: consumables.length,
+    };
   }
 }
 

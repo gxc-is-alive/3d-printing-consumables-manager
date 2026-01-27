@@ -41,7 +41,7 @@ const formData = ref({
   brandId: '',
   typeId: '',
   color: '',
-  colorHex: '#ffffff',
+  colorHexList: ['#ffffff'] as string[], // 支持多色
   weight: 1000,
   price: 0,
   purchaseDate: '',
@@ -50,6 +50,28 @@ const formData = ref({
   isOpened: false,
   openedAt: '',
 });
+
+// 添加颜色
+function addColor() {
+  if (formData.value.colorHexList.length < 5) {
+    formData.value.colorHexList.push('#ffffff');
+  }
+}
+
+// 移除颜色
+function removeColor(index: number) {
+  if (formData.value.colorHexList.length > 1) {
+    formData.value.colorHexList.splice(index, 1);
+  }
+}
+
+// 生成渐变预览样式
+function getGradientStyle(colors: string[]): string {
+  if (colors.length === 1) {
+    return colors[0];
+  }
+  return `linear-gradient(90deg, ${colors.join(', ')})`;
+}
 
 // 品牌选项 (Picker 格式)
 const brandPickerOptions = computed(() => 
@@ -142,7 +164,7 @@ function openCreateForm() {
     brandId: '',
     typeId: '',
     color: '',
-    colorHex: '#ffffff',
+    colorHexList: ['#ffffff'],
     weight: 1000,
     price: 0,
     purchaseDate: new Date().toISOString().split('T')[0],
@@ -156,11 +178,13 @@ function openCreateForm() {
 
 function openEditForm(consumable: Consumable) {
   editingConsumable.value = consumable;
+  // 解析多色：colorHex 可能是逗号分隔的多个颜色
+  const colors = consumable.colorHex ? consumable.colorHex.split(',').map(c => c.trim()) : ['#ffffff'];
   formData.value = {
     brandId: consumable.brandId,
     typeId: consumable.typeId,
     color: consumable.color,
-    colorHex: consumable.colorHex || '#ffffff',
+    colorHexList: colors,
     weight: consumable.weight,
     price: consumable.price,
     purchaseDate: consumable.purchaseDate.split('T')[0],
@@ -215,10 +239,20 @@ async function handleSubmit() {
     return;
   }
 
+  // 将多色数组转为逗号分隔的字符串
+  const colorHex = formData.value.colorHexList.join(',');
+
   const submitData = {
-    ...formData.value,
-    colorHex: formData.value.colorHex || undefined,
+    brandId: formData.value.brandId,
+    typeId: formData.value.typeId,
+    color: formData.value.color,
+    colorHex: colorHex || undefined,
+    weight: formData.value.weight,
+    price: formData.value.price,
+    purchaseDate: formData.value.purchaseDate,
     notes: formData.value.notes || undefined,
+    quantity: formData.value.quantity,
+    isOpened: formData.value.isOpened,
   };
 
   if (editingConsumable.value) {
@@ -304,6 +338,10 @@ function clearFilter() {
 
         <!-- 耗材列表 -->
         <div v-else class="consumable-list">
+          <!-- 悬浮新增按钮 -->
+          <div class="fab-button" @click="openCreateForm">
+            <van-icon name="plus" size="24" />
+          </div>
           <van-swipe-cell
             v-for="consumable in consumableStore.consumables"
             :key="consumable.id"
@@ -313,7 +351,7 @@ function clearFilter() {
               :subtitle="consumable.color"
               :tag="consumable.isOpened ? '已开封' : '未开封'"
               :tag-type="consumable.isOpened ? 'warning' : 'success'"
-              :color-bar="consumable.colorHex || '#ccc'"
+              :color-bar="getGradientStyle(consumable.colorHex ? consumable.colorHex.split(',') : ['#ccc'])"
               @click="openEditForm(consumable)"
             >
               <div class="card-info">
@@ -455,9 +493,38 @@ function clearFilter() {
 
         <van-field label="颜色值">
           <template #input>
-            <div class="color-picker-wrapper">
-              <input v-model="formData.colorHex" type="color" class="color-input" />
-              <span class="color-value">{{ formData.colorHex }}</span>
+            <div class="color-picker-multi">
+              <div class="color-list">
+                <div 
+                  v-for="(color, index) in formData.colorHexList" 
+                  :key="index"
+                  class="color-item"
+                >
+                  <input 
+                    v-model="formData.colorHexList[index]" 
+                    type="color" 
+                    class="color-input" 
+                  />
+                  <van-icon 
+                    v-if="formData.colorHexList.length > 1"
+                    name="cross" 
+                    class="color-remove"
+                    @click="removeColor(index)"
+                  />
+                </div>
+                <div 
+                  v-if="formData.colorHexList.length < 5"
+                  class="color-add"
+                  @click="addColor"
+                >
+                  <van-icon name="plus" />
+                </div>
+              </div>
+              <div 
+                v-if="formData.colorHexList.length > 1"
+                class="gradient-preview"
+                :style="{ background: getGradientStyle(formData.colorHexList) }"
+              />
             </div>
           </template>
         </van-field>
@@ -581,6 +648,29 @@ function clearFilter() {
   gap: 12px;
 }
 
+.fab-button {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #42b883;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(66, 184, 131, 0.4);
+  z-index: 100;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.fab-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(66, 184, 131, 0.3);
+}
+
 .card-info {
   margin-top: 8px;
 }
@@ -621,10 +711,19 @@ function clearFilter() {
   flex: 1;
 }
 
-.color-picker-wrapper {
+.color-picker-multi {
+  width: 100%;
+}
+
+.color-list {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
-  gap: 12px;
+}
+
+.color-item {
+  position: relative;
 }
 
 .color-input {
@@ -636,9 +735,43 @@ function clearFilter() {
   cursor: pointer;
 }
 
-.color-value {
-  font-size: 14px;
-  color: #969799;
+.color-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  background: #ee0a24;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.color-add {
+  width: 40px;
+  height: 40px;
+  border: 1px dashed #c8c9cc;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c8c9cc;
+  cursor: pointer;
+}
+
+.color-add:active {
+  background: #f7f8fa;
+}
+
+.gradient-preview {
+  margin-top: 8px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #ebedf0;
 }
 
 .field-hint {
