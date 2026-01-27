@@ -496,7 +496,7 @@ function clearFilter() {
             <div class="color-picker-multi">
               <div class="color-list">
                 <div 
-                  v-for="(color, index) in formData.colorHexList" 
+                  v-for="(_color, index) in formData.colorHexList" 
                   :key="index"
                   class="color-item"
                 >

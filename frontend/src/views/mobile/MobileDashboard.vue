@@ -241,8 +241,8 @@ async function handleRefresh() {
                           <!-- 连线 -->
                           <svg class="chart-line" viewBox="0 0 100 100" preserveAspectRatio="none">
                             <polyline
-                              :points="priceStats.trend.map((item, index) => 
-                                `${(index / (priceStats.trend.length - 1 || 1)) * 100},${100 - ((item.price - priceStats.minPrice) / (priceStats.maxPrice - priceStats.minPrice || 1)) * 100}`
+                              :points="priceStats!.trend.map((item, index) => 
+                                `${(index / (priceStats!.trend.length - 1 || 1)) * 100},${100 - ((item.price - priceStats!.minPrice) / (priceStats!.maxPrice - priceStats!.minPrice || 1)) * 100}`
                               ).join(' ')"
                               fill="none"
                               stroke="#42b883"
