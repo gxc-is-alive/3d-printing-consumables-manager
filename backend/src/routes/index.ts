@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import brandRoutes from './brand.routes';
+import brandColorRoutes from './brandColor.routes';
 import brandConfigFileRoutes from './brandConfigFile.routes';
 import brandTypeRoutes from './brandType.routes';
 import consumableTypeRoutes from './consumableType.routes';
@@ -16,6 +17,7 @@ const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/brands', brandRoutes);
+router.use('/brands/:brandId/colors', brandColorRoutes); // 品牌颜色路由
 router.use('/', brandConfigFileRoutes); // 品牌配置文件路由（包含 /brands/:brandId/files 和 /brand-files/:fileId）
 router.use('/brand-types', brandTypeRoutes); // 品牌类型配置路由
 router.use('/types', consumableTypeRoutes);

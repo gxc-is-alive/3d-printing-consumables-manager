@@ -146,6 +146,7 @@ beforeEach(async () => {
   await prisma.usageRecord.deleteMany();
   await prisma.consumable.deleteMany();
   await prisma.brandConfigFile.deleteMany();
+  await prisma.brandColor.deleteMany();
   await prisma.brand.deleteMany();
   await prisma.consumableType.deleteMany();
   await prisma.maintenanceRecord.deleteMany();

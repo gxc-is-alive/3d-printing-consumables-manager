@@ -34,6 +34,16 @@ export function useToast() {
     },
 
     /**
+     * 显示警告提示
+     */
+    warning(message: string) {
+      showToast({
+        message,
+        icon: "warning-o",
+      });
+    },
+
+    /**
      * 显示加载提示
      */
     loading(message = "加载中...") {

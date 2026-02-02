@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useBrandStore, type Brand } from '@/stores/brand';
 import MobileLayout from '@/components/mobile/MobileLayout.vue';
 import FormPopup from '@/components/mobile/FormPopup.vue';
@@ -7,6 +8,7 @@ import EmptyState from '@/components/mobile/EmptyState.vue';
 import { useToast } from '@/composables/useToast';
 import { showConfirmDialog } from 'vant';
 
+const router = useRouter();
 const brandStore = useBrandStore();
 const toast = useToast();
 
@@ -98,6 +100,10 @@ async function handleDelete(brand: Brand) {
     // 用户取消
   }
 }
+
+function goToColors(brand: Brand) {
+  router.push({ name: 'MobileBrandColors', params: { brandId: brand.id } });
+}
 </script>
 
 <template>
@@ -129,7 +135,19 @@ async function handleDelete(brand: Brand) {
               :label="brand.website || ''"
               is-link
               @click="openEditForm(brand)"
-            />
+            >
+              <template #right-icon>
+                <van-button
+                  size="small"
+                  plain
+                  type="primary"
+                  icon="color"
+                  @click.stop="goToColors(brand)"
+                >
+                  颜色
+                </van-button>
+              </template>
+            </van-cell>
 
             <template #right>
               <van-button

@@ -1,5 +1,8 @@
 import { prisma } from '../db';
 
+// 耗材状态类型
+export type ConsumableStatus = 'unopened' | 'opened' | 'depleted';
+
 export interface ConsumableResponse {
   id: string;
   userId: string;
@@ -13,6 +16,8 @@ export interface ConsumableResponse {
   purchaseDate: Date;
   openedAt: Date | null;
   isOpened: boolean;
+  status: string; // Prisma 返回 string，运行时为 ConsumableStatus
+  depletedAt: Date | null;
   openedDays: number | null; // Days since opened, null if not opened
   notes: string | null;
   createdAt: Date;
@@ -54,12 +59,14 @@ export function calculateOpenedDays(openedAt: Date | null, referenceDate?: Date)
 /**
  * Add openedDays field to a consumable object
  */
-function addOpenedDays<T extends { openedAt: Date | null; isOpened: boolean }>(
+function addOpenedDays<T extends { openedAt: Date | null; isOpened: boolean; status: string }>(
   consumable: T
 ): T & { openedDays: number | null } {
+  // 只有已开封且未用完的耗材才计算开封天数
+  const shouldCalculate = consumable.isOpened && consumable.status !== 'depleted';
   return {
     ...consumable,
-    openedDays: consumable.isOpened ? calculateOpenedDays(consumable.openedAt) : null,
+    openedDays: shouldCalculate ? calculateOpenedDays(consumable.openedAt) : null,
   };
 }
 
@@ -103,6 +110,8 @@ export interface ConsumableFilters {
   color?: string;
   colorHex?: string;
   isOpened?: boolean;
+  status?: ConsumableStatus;
+  includeDepleted?: boolean; // 默认 false，不返回已用完的耗材
 }
 
 // Validate hex color format
@@ -170,6 +179,7 @@ export class ConsumableService {
     // Determine opened status and date
     const finalIsOpened = isOpened;
     const finalOpenedAt = isOpened ? openedAt || new Date() : null;
+    const finalStatus = isOpened ? 'opened' : 'unopened';
 
     // Use transaction to create all consumables atomically
     const consumables = await prisma.$transaction(async (tx) => {
@@ -186,6 +196,8 @@ export class ConsumableService {
         purchaseDate: Date;
         openedAt: Date | null;
         isOpened: boolean;
+        status: string;
+        depletedAt: Date | null;
         notes: string | null;
         createdAt: Date;
         updatedAt: Date;
@@ -208,6 +220,7 @@ export class ConsumableService {
             notes,
             isOpened: finalIsOpened,
             openedAt: finalOpenedAt,
+            status: finalStatus,
           },
           include: {
             brand: { select: { id: true, name: true } },
@@ -304,8 +317,19 @@ export class ConsumableService {
     if (filters?.colorHex) {
       where.colorHex = { contains: filters.colorHex };
     }
+
+    // isOpened 筛选 - 需要考虑 status 字段的兼容性
     if (filters?.isOpened !== undefined) {
       where.isOpened = filters.isOpened;
+    }
+
+    // 状态筛选
+    if (filters?.status) {
+      where.status = filters.status;
+    } else if (filters?.includeDepleted !== true) {
+      // 默认不返回已用完的耗材
+      // 注意：旧数据可能 status 不正确，所以只排除明确标记为 depleted 的
+      where.status = { not: 'depleted' };
     }
 
     const consumables = await prisma.consumable.findMany({
@@ -454,6 +478,81 @@ export class ConsumableService {
       data: {
         isOpened: true,
         openedAt: openedAt || new Date(),
+        status: 'opened',
+      },
+      include: {
+        brand: { select: { id: true, name: true } },
+        type: { select: { id: true, name: true } },
+      },
+    });
+
+    return addOpenedDays(updated);
+  }
+
+  /**
+   * Mark a consumable as depleted (用完)
+   */
+  static async markAsDepleted(
+    userId: string,
+    consumableId: string,
+    depletedAt?: Date
+  ): Promise<ConsumableResponse> {
+    // Check if consumable exists and belongs to user
+    const consumable = await prisma.consumable.findFirst({
+      where: { id: consumableId, userId },
+    });
+
+    if (!consumable) {
+      throw new Error('Consumable not found');
+    }
+
+    // 只有已开封的耗材才能标记为用完
+    if (!consumable.isOpened) {
+      throw new Error('Cannot mark unopened consumable as depleted');
+    }
+
+    const updated = await prisma.consumable.update({
+      where: { id: consumableId },
+      data: {
+        status: 'depleted',
+        depletedAt: depletedAt || new Date(),
+        remainingWeight: 0, // 用完时剩余重量设为0
+      },
+      include: {
+        brand: { select: { id: true, name: true } },
+        type: { select: { id: true, name: true } },
+      },
+    });
+
+    return addOpenedDays(updated);
+  }
+
+  /**
+   * Restore a depleted consumable back to opened status (撤销用完)
+   */
+  static async restoreFromDepleted(
+    userId: string,
+    consumableId: string
+  ): Promise<ConsumableResponse> {
+    // Check if consumable exists and belongs to user
+    const consumable = await prisma.consumable.findFirst({
+      where: { id: consumableId, userId },
+    });
+
+    if (!consumable) {
+      throw new Error('Consumable not found');
+    }
+
+    // 只有已用完的耗材才能恢复
+    if (consumable.status !== 'depleted') {
+      throw new Error('Consumable is not depleted');
+    }
+
+    const updated = await prisma.consumable.update({
+      where: { id: consumableId },
+      data: {
+        status: 'opened',
+        depletedAt: null,
       },
       include: {
         brand: { select: { id: true, name: true } },

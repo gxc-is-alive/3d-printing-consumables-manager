@@ -14,17 +14,17 @@ const activeTab = ref('overview');
 // 格式化重量
 function formatWeight(weight: number): string {
   if (weight >= 1000) {
-    return `${(weight / 1000).toFixed(1)}kg`;
+    return `${(weight / 1000).toFixed(2)}kg`;
   }
-  return `${weight}g`;
+  return `${weight.toFixed(0)}g`;
 }
 
 // 格式化金额
 function formatMoney(amount: number): string {
   if (amount >= 10000) {
-    return `¥${(amount / 10000).toFixed(1)}万`;
+    return `¥${(amount / 10000).toFixed(2)}万`;
   }
-  return `¥${amount.toFixed(0)}`;
+  return `¥${amount.toFixed(2)}`;
 }
 
 // 低库存耗材
@@ -192,13 +192,13 @@ async function handleRefresh() {
                 <div v-if="priceStats" class="price-section">
                   <div class="stats-grid">
                     <StatsCard
-                      :value="`¥${priceStats.averagePrice.toFixed(1)}`"
+                      :value="`¥${priceStats.averagePrice.toFixed(2)}`"
                       label="平均价格"
                       icon="chart-trending-o"
                       color="#42b883"
                     />
                     <StatsCard
-                      :value="`¥${priceStats.minPrice.toFixed(0)} - ¥${priceStats.maxPrice.toFixed(0)}`"
+                      :value="`¥${priceStats.minPrice.toFixed(2)} - ¥${priceStats.maxPrice.toFixed(2)}`"
                       label="价格区间"
                       icon="bar-chart-o"
                       color="#4a90d9"
@@ -211,9 +211,9 @@ async function handleRefresh() {
                     <div class="price-chart">
                       <div class="chart-container">
                         <div class="chart-y-axis">
-                          <span>¥{{ priceStats.maxPrice.toFixed(0) }}</span>
-                          <span>¥{{ priceStats.averagePrice.toFixed(0) }}</span>
-                          <span>¥{{ priceStats.minPrice.toFixed(0) }}</span>
+                          <span>¥{{ priceStats.maxPrice.toFixed(2) }}</span>
+                          <span>¥{{ priceStats.averagePrice.toFixed(2) }}</span>
+                          <span>¥{{ priceStats.minPrice.toFixed(2) }}</span>
                         </div>
                         <div class="chart-area">
                           <!-- 均值线 -->

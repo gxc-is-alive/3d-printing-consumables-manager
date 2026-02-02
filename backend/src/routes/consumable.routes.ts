@@ -18,7 +18,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { brandId, typeId, color, colorHex, isOpened } = req.query;
+    const { brandId, typeId, color, colorHex, isOpened, status, includeDepleted } = req.query;
 
     const filters = {
       brandId: brandId as string | undefined,
@@ -26,6 +26,8 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       color: color as string | undefined,
       colorHex: colorHex as string | undefined,
       isOpened: isOpened !== undefined ? isOpened === 'true' : undefined,
+      status: status as 'unopened' | 'opened' | 'depleted' | undefined,
+      includeDepleted: includeDepleted === 'true',
     };
 
     const consumables = await ConsumableService.findAllByUser(req.user.userId, filters);
@@ -311,6 +313,59 @@ router.patch('/:id/open', async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to mark consumable as opened';
     const status = message === 'Consumable not found' ? 404 : 500;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+/**
+ * PATCH /api/consumables/:id/deplete
+ * Mark a consumable as depleted (用完)
+ */
+router.patch('/:id/deplete', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const { depletedAt } = req.body;
+
+    const consumable = await ConsumableService.markAsDepleted(
+      req.user.userId,
+      req.params.id,
+      depletedAt ? new Date(depletedAt) : undefined
+    );
+
+    res.json({ success: true, data: consumable });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to mark consumable as depleted';
+    let status = 500;
+    if (message === 'Consumable not found') status = 404;
+    if (message === 'Cannot mark unopened consumable as depleted') status = 400;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+/**
+ * PATCH /api/consumables/:id/restore
+ * Restore a depleted consumable back to opened status (撤销用完)
+ */
+router.patch('/:id/restore', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Not authenticated' });
+      return;
+    }
+
+    const consumable = await ConsumableService.restoreFromDepleted(req.user.userId, req.params.id);
+
+    res.json({ success: true, data: consumable });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to restore consumable';
+    let status = 500;
+    if (message === 'Consumable not found') status = 404;
+    if (message === 'Consumable is not depleted') status = 400;
     res.status(status).json({ success: false, error: message });
   }
 });

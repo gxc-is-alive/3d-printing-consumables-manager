@@ -3,16 +3,19 @@ import { ref, onMounted, computed, watch } from 'vue';
 import { useConsumableStore, type Consumable, type ConsumableFormData, type BatchCreateFormData } from '@/stores/consumable';
 import { useBrandStore } from '@/stores/brand';
 import { useConsumableTypeStore } from '@/stores/consumableType';
+import { useBrandColorStore, type BrandColor } from '@/stores/brandColor';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ConsumableFilter, { type FilterValues } from '@/components/ConsumableFilter.vue';
 import ColorSearch from '@/components/ColorSearch.vue';
+import TypeCascadeSelector from '@/components/TypeCascadeSelector.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const consumableStore = useConsumableStore();
 const brandStore = useBrandStore();
 const typeStore = useConsumableTypeStore();
+const brandColorStore = useBrandColorStore();
 
 const showForm = ref(false);
 const editingConsumable = ref<Consumable | null>(null);
@@ -31,6 +34,16 @@ const formData = ref<ConsumableFormData & { quantity?: number; isOpened?: boolea
 });
 const deleteConfirmId = ref<string | null>(null);
 const openConfirmId = ref<string | null>(null);
+const depleteConfirmId = ref<string | null>(null);
+const restoreConfirmId = ref<string | null>(null);
+
+// 类型选择变化处理
+function onTypeChange(typeId: string | null) {
+  formData.value.typeId = typeId || '';
+}
+
+// 显示已用完的耗材
+const showDepleted = ref(false);
 
 // 当 isOpened 变化时，自动设置 openedAt
 watch(() => formData.value.isOpened, (newVal) => {
@@ -38,6 +51,36 @@ watch(() => formData.value.isOpened, (newVal) => {
     formData.value.openedAt = new Date().toISOString().split('T')[0];
   }
 });
+
+// 当品牌变化时，加载该品牌的颜色列表并清空已选颜色
+watch(() => formData.value.brandId, async (newBrandId, oldBrandId) => {
+  if (newBrandId && newBrandId !== oldBrandId) {
+    // 清空已选颜色
+    formData.value.color = '';
+    formData.value.colorHex = '';
+    // 加载新品牌的颜色列表
+    await brandColorStore.fetchColors(newBrandId);
+  }
+});
+
+// 颜色选择器相关
+const showColorPicker = ref(false);
+const brandColors = computed(() => {
+  if (!formData.value.brandId) return [];
+  return brandColorStore.getColors(formData.value.brandId);
+});
+
+function openColorPicker() {
+  if (formData.value.brandId) {
+    showColorPicker.value = true;
+  }
+}
+
+function selectBrandColor(color: BrandColor) {
+  formData.value.color = color.colorName;
+  formData.value.colorHex = color.colorHex;
+  showColorPicker.value = false;
+}
 
 // Filters using the new component
 const filterValues = ref<FilterValues>({
@@ -57,9 +100,9 @@ const availableColors = computed(() => {
 
 onMounted(async () => {
   await Promise.all([
-    consumableStore.fetchConsumables(),
+    consumableStore.fetchConsumables({ includeDepleted: showDepleted.value }),
     brandStore.fetchBrands(),
-    typeStore.fetchTypes(),
+    typeStore.fetchHierarchy(),
   ]);
 });
 
@@ -73,11 +116,12 @@ function formatOpenedDays(openedDays: number | null): string {
 
 // Apply filters using the new filter component
 async function applyFilters() {
-  const filters: { brandId?: string; typeId?: string; color?: string; isOpened?: boolean } = {};
+  const filters: { brandId?: string; typeId?: string; color?: string; isOpened?: boolean; includeDepleted?: boolean } = {};
   if (filterValues.value.brandId) filters.brandId = filterValues.value.brandId;
   if (filterValues.value.typeId) filters.typeId = filterValues.value.typeId;
   if (filterValues.value.color) filters.color = filterValues.value.color;
   if (filterValues.value.isOpened !== '') filters.isOpened = filterValues.value.isOpened === 'true';
+  filters.includeDepleted = showDepleted.value;
   await consumableStore.fetchConsumables(filters);
 }
 
@@ -88,7 +132,13 @@ async function clearFilters() {
     color: '',
     isOpened: '',
   };
-  await consumableStore.fetchConsumables();
+  await consumableStore.fetchConsumables({ includeDepleted: showDepleted.value });
+}
+
+// 切换显示已用完
+async function toggleShowDepleted() {
+  showDepleted.value = !showDepleted.value;
+  await applyFilters();
 }
 
 function handleColorSearch(color: string) {
@@ -146,6 +196,17 @@ async function handleSubmit() {
     colorHex: formData.value.colorHex || undefined,
     notes: formData.value.notes || undefined,
   };
+
+  // 检查是否为新颜色，如果是则自动添加到品牌颜色库
+  if (formData.value.brandId && formData.value.color) {
+    const colorExists = brandColorStore.colorExists(formData.value.brandId, formData.value.color);
+    if (!colorExists) {
+      await brandColorStore.createColor(formData.value.brandId, {
+        colorName: formData.value.color,
+        colorHex: formData.value.colorHex || '#CCCCCC',
+      });
+    }
+  }
 
   if (editingConsumable.value) {
     // 编辑模式：使用单个更新
@@ -232,6 +293,54 @@ async function handleMarkAsOpened() {
   }
 }
 
+// 标记为已用完
+function confirmDeplete(id: string) {
+  depleteConfirmId.value = id;
+}
+
+function cancelDeplete() {
+  depleteConfirmId.value = null;
+}
+
+async function handleMarkAsDepleted() {
+  if (depleteConfirmId.value) {
+    const result = await consumableStore.markAsDepleted(depleteConfirmId.value);
+    if (result) {
+      depleteConfirmId.value = null;
+    }
+  }
+}
+
+// 恢复已用完的耗材
+function confirmRestore(id: string) {
+  restoreConfirmId.value = id;
+}
+
+function cancelRestore() {
+  restoreConfirmId.value = null;
+}
+
+async function handleRestore() {
+  if (restoreConfirmId.value) {
+    const result = await consumableStore.restoreFromDepleted(restoreConfirmId.value);
+    if (result) {
+      restoreConfirmId.value = null;
+    }
+  }
+}
+
+// 获取状态显示文本
+function getStatusText(consumable: Consumable): string {
+  if (consumable.status === 'depleted') return '已用完';
+  return consumable.isOpened ? '已开封' : '未开封';
+}
+
+// 获取状态样式类
+function getStatusClass(consumable: Consumable): string {
+  if (consumable.status === 'depleted') return 'depleted';
+  return consumable.isOpened ? 'opened' : 'sealed';
+}
+
 async function handleLogout() {
   await authStore.logout();
   router.push('/login');
@@ -272,6 +381,10 @@ async function handleLogout() {
 
       <div class="toolbar">
         <button @click="openCreateForm" class="btn btn-primary">+ 新增耗材</button>
+        <label class="show-depleted-toggle">
+          <input type="checkbox" :checked="showDepleted" @change="toggleShowDepleted" />
+          <span>显示已用完</span>
+        </label>
       </div>
 
       <div v-if="consumableStore.isLoading && !showForm" class="loading">加载中...</div>
@@ -282,19 +395,20 @@ async function handleLogout() {
       </div>
 
       <div v-else class="consumable-list">
-        <div v-for="consumable in consumableStore.consumables" :key="consumable.id" class="consumable-card">
+        <div v-for="consumable in consumableStore.consumables" :key="consumable.id" 
+             :class="['consumable-card', { 'depleted-card': consumable.status === 'depleted' }]">
           <div class="consumable-color" :style="{ backgroundColor: consumable.colorHex || '#ccc' }"></div>
           <div class="consumable-info">
             <div class="consumable-header">
               <h3>{{ consumable.brand?.name }} - {{ consumable.type?.name }}</h3>
-              <span :class="['status-badge', consumable.isOpened ? 'opened' : 'sealed']">
-                {{ consumable.isOpened ? '已开封' : '未开封' }}
+              <span :class="['status-badge', getStatusClass(consumable)]">
+                {{ getStatusText(consumable) }}
               </span>
             </div>
             <div class="consumable-details">
               <span class="color-name">颜色: {{ consumable.color }}</span>
-              <span>重量: {{ consumable.weight }}g</span>
-              <span>剩余: {{ consumable.remainingWeight }}g</span>
+              <span>重量: {{ consumable.weight.toFixed(0) }}g</span>
+              <span>剩余: {{ consumable.remainingWeight.toFixed(0) }}g</span>
               <span>价格: ¥{{ consumable.price.toFixed(2) }}</span>
             </div>
             <div class="consumable-meta">
@@ -302,15 +416,30 @@ async function handleLogout() {
               <span v-if="consumable.isOpened && consumable.openedDays !== null" class="opened-duration">
                 {{ formatOpenedDays(consumable.openedDays) }}
               </span>
+              <span v-if="consumable.status === 'depleted' && consumable.depletedAt" class="depleted-date">
+                用完于: {{ consumable.depletedAt.split('T')[0] }}
+              </span>
             </div>
             <p v-if="consumable.notes" class="notes">{{ consumable.notes }}</p>
           </div>
           <div class="consumable-actions">
-            <button v-if="!consumable.isOpened" @click="confirmOpen(consumable.id)" class="btn btn-secondary btn-sm">
-              标记开封
-            </button>
-            <button @click="openEditForm(consumable)" class="btn btn-secondary btn-sm">编辑</button>
-            <button @click="confirmDelete(consumable.id)" class="btn btn-danger btn-sm">删除</button>
+            <!-- 已用完的耗材只显示恢复按钮 -->
+            <template v-if="consumable.status === 'depleted'">
+              <button @click="confirmRestore(consumable.id)" class="btn btn-secondary btn-sm">
+                恢复
+              </button>
+            </template>
+            <!-- 正常耗材显示完整操作 -->
+            <template v-else>
+              <button v-if="!consumable.isOpened" @click="confirmOpen(consumable.id)" class="btn btn-secondary btn-sm">
+                标记开封
+              </button>
+              <button v-if="consumable.isOpened" @click="confirmDeplete(consumable.id)" class="btn btn-warning btn-sm">
+                标记用完
+              </button>
+              <button @click="openEditForm(consumable)" class="btn btn-secondary btn-sm">编辑</button>
+              <button @click="confirmDelete(consumable.id)" class="btn btn-danger btn-sm">删除</button>
+            </template>
           </div>
         </div>
       </div>
@@ -333,18 +462,29 @@ async function handleLogout() {
             </div>
             <div class="form-group">
               <label for="typeId">类型 *</label>
-              <select id="typeId" v-model="formData.typeId" required :disabled="consumableStore.isLoading">
-                <option value="">请选择类型</option>
-                <option v-for="type in typeStore.types" :key="type.id" :value="type.id">
-                  {{ type.name }}
-                </option>
-              </select>
+              <TypeCascadeSelector
+                v-model="formData.typeId"
+                placeholder="请选择类型"
+                :disabled="consumableStore.isLoading"
+                @change="onTypeChange"
+              />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="color">颜色名称 *</label>
-              <input id="color" v-model="formData.color" type="text" placeholder="如: 白色、黑色" required :disabled="consumableStore.isLoading" />
+              <div class="color-select-group">
+                <input id="color" v-model="formData.color" type="text" placeholder="如: 白色、黑色" required :disabled="consumableStore.isLoading" />
+                <button 
+                  type="button" 
+                  class="btn btn-secondary btn-color-select" 
+                  @click="openColorPicker"
+                  :disabled="!formData.brandId || consumableStore.isLoading"
+                  :title="!formData.brandId ? '请先选择品牌' : '从颜色库选择'"
+                >
+                  选择
+                </button>
+              </div>
             </div>
             <div class="form-group">
               <label for="colorHex">颜色代码</label>
@@ -404,6 +544,41 @@ async function handleLogout() {
       </div>
     </div>
 
+    <!-- Color Picker Modal -->
+    <div v-if="showColorPicker" class="modal-overlay" @click.self="showColorPicker = false">
+      <div class="modal modal-color-picker">
+        <div class="modal-header">
+          <h2>选择颜色</h2>
+          <button @click="showColorPicker = false" class="close-btn">&times;</button>
+        </div>
+        
+        <div v-if="brandColorStore.isLoading" class="loading">
+          加载中...
+        </div>
+
+        <div v-else-if="brandColors.length === 0" class="empty-state">
+          <p>该品牌暂无颜色记录</p>
+          <p>请手动输入颜色名称</p>
+        </div>
+
+        <div v-else class="color-picker-list">
+          <div 
+            v-for="color in brandColors" 
+            :key="color.id" 
+            class="color-picker-item"
+            :class="{ active: color.colorName === formData.color }"
+            @click="selectBrandColor(color)"
+          >
+            <div class="color-swatch" :style="{ backgroundColor: color.colorHex }"></div>
+            <div class="color-info">
+              <span class="color-name">{{ color.colorName }}</span>
+              <span class="color-hex">{{ color.colorHex }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Delete Confirmation Modal -->
     <div v-if="deleteConfirmId" class="modal-overlay" @click.self="cancelDelete">
       <div class="modal modal-confirm">
@@ -429,6 +604,37 @@ async function handleLogout() {
           <button @click="cancelOpen" class="btn btn-secondary" :disabled="consumableStore.isLoading">取消</button>
           <button @click="handleMarkAsOpened" class="btn btn-primary" :disabled="consumableStore.isLoading">
             {{ consumableStore.isLoading ? '处理中...' : '确认开封' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deplete Confirmation Modal -->
+    <div v-if="depleteConfirmId" class="modal-overlay" @click.self="cancelDeplete">
+      <div class="modal modal-confirm">
+        <h2>标记用完</h2>
+        <p>确定要将此耗材标记为已用完吗？用完日期将设为今天。</p>
+        <p class="hint">标记为已用完后，耗材将从默认列表中隐藏，但仍可通过"显示已用完"选项查看。</p>
+        <div v-if="consumableStore.error" class="error-message">{{ consumableStore.error }}</div>
+        <div class="form-actions">
+          <button @click="cancelDeplete" class="btn btn-secondary" :disabled="consumableStore.isLoading">取消</button>
+          <button @click="handleMarkAsDepleted" class="btn btn-warning" :disabled="consumableStore.isLoading">
+            {{ consumableStore.isLoading ? '处理中...' : '确认用完' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Restore Confirmation Modal -->
+    <div v-if="restoreConfirmId" class="modal-overlay" @click.self="cancelRestore">
+      <div class="modal modal-confirm">
+        <h2>恢复耗材</h2>
+        <p>确定要恢复此耗材吗？耗材将恢复为已开封状态。</p>
+        <div v-if="consumableStore.error" class="error-message">{{ consumableStore.error }}</div>
+        <div class="form-actions">
+          <button @click="cancelRestore" class="btn btn-secondary" :disabled="consumableStore.isLoading">取消</button>
+          <button @click="handleRestore" class="btn btn-primary" :disabled="consumableStore.isLoading">
+            {{ consumableStore.isLoading ? '处理中...' : '确认恢复' }}
           </button>
         </div>
       </div>
@@ -502,6 +708,24 @@ async function handleLogout() {
 
 .toolbar {
   margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.show-depleted-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.show-depleted-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .btn {
@@ -545,6 +769,15 @@ async function handleLogout() {
   background: #c0392b;
 }
 
+.btn-warning {
+  background: #f39c12;
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d68910;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -567,6 +800,15 @@ async function handleLogout() {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   display: flex;
   overflow: hidden;
+}
+
+.consumable-card.depleted-card {
+  opacity: 0.7;
+  background: #f8f8f8;
+}
+
+.consumable-card.depleted-card .consumable-color {
+  filter: grayscale(50%);
 }
 
 .consumable-color {
@@ -608,6 +850,11 @@ async function handleLogout() {
   color: #155724;
 }
 
+.status-badge.depleted {
+  background: #e2e3e5;
+  color: #6c757d;
+}
+
 .consumable-details {
   display: flex;
   gap: 1rem;
@@ -631,6 +878,14 @@ async function handleLogout() {
 .opened-duration {
   color: #856404;
   background: #fff3cd;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.depleted-date {
+  color: #6c757d;
+  background: #e2e3e5;
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -681,7 +936,15 @@ async function handleLogout() {
 
 .modal-confirm p {
   color: #666;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.modal-confirm p.hint {
+  font-size: 0.85rem;
+  color: #888;
+  background: #f8f9fa;
+  padding: 0.5rem;
+  border-radius: 4px;
 }
 
 .form-row {
@@ -790,5 +1053,104 @@ async function handleLogout() {
 .checkbox-label input[type="checkbox"] {
   width: auto;
   margin: 0;
+}
+
+/* 颜色选择器相关样式 */
+.color-select-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.color-select-group input {
+  flex: 1;
+}
+
+.btn-color-select {
+  padding: 0.75rem 1rem;
+  white-space: nowrap;
+}
+
+.modal-color-picker {
+  max-width: 400px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+.color-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.color-picker-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.color-picker-item:hover {
+  background: #f0f0f0;
+}
+
+.color-picker-item.active {
+  background: #e8f5e9;
+  border-color: #42b883;
+}
+
+.color-picker-item .color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.color-picker-item .color-info {
+  flex: 1;
+  margin-left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.color-picker-item .color-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.color-picker-item .color-hex {
+  font-size: 0.8rem;
+  color: #888;
+  font-family: monospace;
 }
 </style>

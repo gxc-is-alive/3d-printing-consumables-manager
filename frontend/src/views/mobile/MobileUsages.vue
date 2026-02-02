@@ -34,7 +34,7 @@ const consumablePickerOptions = computed(() =>
   consumableStore.consumables
     .filter(c => c.isOpened) // 只显示已开封的
     .map(c => ({
-      text: `${c.brand?.name} ${c.color} (剩余${c.remainingWeight}g)`,
+      text: `${c.brand?.name} ${c.color} (剩余${c.remainingWeight.toFixed(0)}g)`,
       value: c.id,
     }))
 );

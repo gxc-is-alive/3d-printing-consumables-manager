@@ -10,7 +10,7 @@ function checkIsMobile(): boolean {
   const ua = navigator.userAgent || "";
   const isMobileUA =
     /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i.test(
-      ua
+      ua,
     );
   return width < 768 || (isMobileUA && width < 1024);
 }
@@ -121,6 +121,12 @@ const mobileRoutes: RouteRecordRaw[] = [
     path: "/m/brands",
     name: "MobileBrands",
     component: () => import("@/views/mobile/MobileBrands.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/m/brands/:brandId/colors",
+    name: "MobileBrandColors",
+    component: () => import("@/views/mobile/MobileBrandColors.vue"),
     meta: { requiresAuth: true },
   },
   {

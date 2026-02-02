@@ -160,7 +160,7 @@ function getConsumableLabel(consumable: UsageRecord['consumable']) {
 function getConsumableSelectLabel(c: typeof consumableStore.consumables[0]) {
   const brand = c.brand?.name || '未知品牌';
   const type = c.type?.name || '未知类型';
-  return `${brand} - ${type} (${c.color}) - 剩余: ${c.remainingWeight}g`;
+  return `${brand} - ${type} (${c.color}) - 剩余: ${c.remainingWeight.toFixed(0)}g`;
 }
 
 async function handleLogout() {
@@ -262,7 +262,7 @@ async function handleLogout() {
             />
             <!-- Over-usage warning -->
             <div v-if="exceedsRemaining" class="warning-inline">
-              ⚠️ 使用量超过剩余库存 (剩余: {{ selectedConsumable?.remainingWeight }}g)
+              ⚠️ 使用量超过剩余库存 (剩余: {{ selectedConsumable?.remainingWeight.toFixed(0) }}g)
             </div>
           </div>
           <div class="form-group">

@@ -30,6 +30,7 @@ model User {
   accessories         Accessory[]
   accessoryUsages     AccessoryUsage[]
   brandTypes          BrandType[]
+  brandColors         BrandColor[]
 }
 
 model Brand {
@@ -46,8 +47,26 @@ model Brand {
   consumables Consumable[]
   configFiles BrandConfigFile[]
   brandTypes  BrandType[]
+  colors      BrandColor[]
 
   @@unique([userId, name])
+}
+
+model BrandColor {
+  id        String   @id @default(uuid())
+  userId    String
+  brandId   String
+  colorName String
+  colorHex  String   @default("#CCCCCC")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, colorName])
+  @@index([brandId])
 }
 
 model ConsumableType {
@@ -55,15 +74,19 @@ model ConsumableType {
   userId      String
   name        String
   description String?
+  parentId    String?  // 父类型ID，null表示大类
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent      ConsumableType?   @relation("TypeHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children    ConsumableType[]  @relation("TypeHierarchy")
   consumables Consumable[]
   brandTypes  BrandType[]
 
-  @@unique([userId, name])
+  @@unique([userId, name, parentId]) // 同一父类下名称唯一
+  @@index([parentId])
 }
 
 // 品牌-类型关联表：存储特定品牌特定类型的温度参数
@@ -101,6 +124,8 @@ model Consumable {
   purchaseDate    DateTime
   openedAt        DateTime?
   isOpened        Boolean   @default(false)
+  status          String    @default("unopened") // unopened, opened, depleted
+  depletedAt      DateTime? // 用完时间
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

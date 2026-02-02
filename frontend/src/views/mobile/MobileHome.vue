@@ -39,9 +39,9 @@ const alertCount = computed(() => {
 // 格式化重量
 function formatWeight(weight: number): string {
   if (weight >= 1000) {
-    return `${(weight / 1000).toFixed(1)}kg`;
+    return `${(weight / 1000).toFixed(2)}kg`;
   }
-  return `${weight}g`;
+  return `${weight.toFixed(0)}g`;
 }
 
 onMounted(async () => {

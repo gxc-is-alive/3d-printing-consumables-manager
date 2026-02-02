@@ -3,16 +3,19 @@ import { ref, onMounted, computed } from 'vue';
 import { useConsumableStore, type Consumable, type BatchCreateFormData } from '@/stores/consumable';
 import { useBrandStore } from '@/stores/brand';
 import { useConsumableTypeStore } from '@/stores/consumableType';
+import { useBrandColorStore } from '@/stores/brandColor';
 import MobileLayout from '@/components/mobile/MobileLayout.vue';
 import DataCard from '@/components/mobile/DataCard.vue';
 import FormPopup from '@/components/mobile/FormPopup.vue';
 import EmptyState from '@/components/mobile/EmptyState.vue';
+import BrandColorPicker from '@/components/mobile/BrandColorPicker.vue';
 import { useToast } from '@/composables/useToast';
 import { showConfirmDialog } from 'vant';
 
 const consumableStore = useConsumableStore();
 const brandStore = useBrandStore();
 const typeStore = useConsumableTypeStore();
+const brandColorStore = useBrandColorStore();
 const toast = useToast();
 
 const isRefreshing = ref(false);
@@ -22,7 +25,7 @@ const editingConsumable = ref<Consumable | null>(null);
 
 // Picker 显示状态
 const showBrandPicker = ref(false);
-const showTypePicker = ref(false);
+const showTypeCascader = ref(false);
 const showDatePicker = ref(false);
 const showOpenedDatePicker = ref(false);
 
@@ -34,7 +37,11 @@ const showFilterStatusPicker = ref(false);
 // 筛选状态
 const filterBrandId = ref('');
 const filterTypeId = ref('');
-const filterOpened = ref('');
+const filterStatus = ref(''); // 改为 status 筛选
+const showDepleted = ref(false); // 显示已用完开关
+
+// 快捷筛选
+const quickFilter = ref<'all' | 'opened'>('all');
 
 // 表单数据
 const formData = ref({
@@ -78,16 +85,39 @@ const brandPickerOptions = computed(() =>
   brandStore.brands.map(b => ({ text: b.name, value: b.id }))
 );
 
-// 类型选项 (Picker 格式)
-const typePickerOptions = computed(() => 
-  typeStore.types.map(t => ({ text: t.name, value: t.id }))
-);
+// 类型级联选择器选项
+const typeCascaderOptions = computed(() => {
+  return typeStore.hierarchy.categories.map((cat) => ({
+    text: cat.name,
+    value: cat.id,
+    // 如果有子类，显示子类；如果没有子类，添加一个占位选项让用户可以选择大类本身
+    children:
+      cat.children.length > 0
+        ? cat.children.map((sub) => ({
+            text: sub.name,
+            value: sub.id,
+          }))
+        : [{ text: '(直接使用此大类)', value: cat.id }],
+  }));
+});
 
-// 开封状态选项
+// 类型选项 (Picker 格式，用于筛选)
+const typePickerOptions = computed(() => {
+  const options: Array<{ text: string; value: string }> = [];
+  for (const cat of typeStore.hierarchy.categories) {
+    for (const sub of cat.children) {
+      options.push({ text: `${cat.name} ${sub.name}`, value: sub.id });
+    }
+  }
+  return options;
+});
+
+// 开封状态选项 - 更新为完整状态
 const statusPickerOptions = [
   { text: '全部', value: '' },
-  { text: '已开封', value: 'true' },
-  { text: '未开封', value: 'false' },
+  { text: '未开封', value: 'unopened' },
+  { text: '已开封', value: 'opened' },
+  { text: '已用完', value: 'depleted' },
 ];
 
 // 获取选中的品牌名称
@@ -98,8 +128,8 @@ const selectedBrandName = computed(() => {
 
 // 获取选中的类型名称
 const selectedTypeName = computed(() => {
-  const type = typeStore.types.find(t => t.id === formData.value.typeId);
-  return type?.name || '请选择类型';
+  if (!formData.value.typeId) return '请选择类型';
+  return typeStore.getTypeDisplayName(formData.value.typeId);
 });
 
 // 筛选显示文本
@@ -109,12 +139,12 @@ const filterBrandName = computed(() => {
 });
 
 const filterTypeName = computed(() => {
-  const type = typeStore.types.find(t => t.id === filterTypeId.value);
-  return type?.name || '全部';
+  if (!filterTypeId.value) return '全部';
+  return typeStore.getTypeDisplayName(filterTypeId.value);
 });
 
 const filterStatusName = computed(() => {
-  const opt = statusPickerOptions.find(o => o.value === filterOpened.value);
+  const opt = statusPickerOptions.find(o => o.value === filterStatus.value);
   return opt?.text || '全部';
 });
 
@@ -123,9 +153,27 @@ const activeFilterCount = computed(() => {
   let count = 0;
   if (filterBrandId.value) count++;
   if (filterTypeId.value) count++;
-  if (filterOpened.value) count++;
+  if (filterStatus.value) count++;
+  if (showDepleted.value) count++;
+  if (quickFilter.value !== 'all') count++;
   return count;
 });
+
+// 获取耗材状态标签
+function getStatusTag(consumable: Consumable): { text: string; type: 'success' | 'warning' | 'default' } {
+  if (consumable.status === 'depleted') {
+    return { text: '已用完', type: 'default' };
+  }
+  if (consumable.status === 'opened' || consumable.isOpened) {
+    return { text: '已开封', type: 'warning' };
+  }
+  return { text: '未开封', type: 'success' };
+}
+
+// 判断是否超期开封（超过30天）
+function isOverdue(consumable: Consumable): boolean {
+  return consumable.openedDays !== null && consumable.openedDays > 30;
+}
 
 // 格式化开封天数
 function formatOpenedDays(openedDays: number | null): string {
@@ -144,7 +192,7 @@ onMounted(async () => {
   await Promise.all([
     consumableStore.fetchConsumables(),
     brandStore.fetchBrands(),
-    typeStore.fetchTypes(),
+    typeStore.fetchHierarchy(),
   ]);
 });
 
@@ -153,9 +201,29 @@ async function handleRefresh() {
   const filters: Record<string, unknown> = {};
   if (filterBrandId.value) filters.brandId = filterBrandId.value;
   if (filterTypeId.value) filters.typeId = filterTypeId.value;
-  if (filterOpened.value) filters.isOpened = filterOpened.value === 'true';
+  
+  // 快捷筛选优先
+  if (quickFilter.value === 'opened') {
+    filters.status = 'opened';
+  } else if (filterStatus.value) {
+    filters.status = filterStatus.value;
+  }
+  
+  // 是否显示已用完
+  if (showDepleted.value || filterStatus.value === 'depleted') {
+    filters.includeDepleted = true;
+  }
+  
   await consumableStore.fetchConsumables(filters);
   isRefreshing.value = false;
+}
+
+// 快捷筛选切换
+function setQuickFilter(filter: 'all' | 'opened') {
+  quickFilter.value = filter;
+  // 清除状态筛选
+  filterStatus.value = '';
+  handleRefresh();
 }
 
 function openCreateForm() {
@@ -202,9 +270,11 @@ function onBrandConfirm({ selectedOptions }: { selectedOptions: Array<{ value: s
   showBrandPicker.value = false;
 }
 
-function onTypeConfirm({ selectedOptions }: { selectedOptions: Array<{ value: string }> }) {
-  formData.value.typeId = selectedOptions[0]?.value || '';
-  showTypePicker.value = false;
+function onTypeCascaderFinish({ selectedOptions }: { selectedOptions: Array<{ text: string; value: string }> }) {
+  if (selectedOptions.length > 0) {
+    formData.value.typeId = selectedOptions[selectedOptions.length - 1].value;
+  }
+  showTypeCascader.value = false;
 }
 
 function onDateConfirm({ selectedValues }: { selectedValues: string[] }) {
@@ -229,7 +299,8 @@ function onFilterTypeConfirm({ selectedOptions }: { selectedOptions: Array<{ val
 }
 
 function onFilterStatusConfirm({ selectedOptions }: { selectedOptions: Array<{ value: string }> }) {
-  filterOpened.value = selectedOptions[0]?.value || '';
+  filterStatus.value = selectedOptions[0]?.value || '';
+  quickFilter.value = 'all'; // 清除快捷筛选
   showFilterStatusPicker.value = false;
 }
 
@@ -241,6 +312,20 @@ async function handleSubmit() {
 
   // 将多色数组转为逗号分隔的字符串
   const colorHex = formData.value.colorHexList.join(',');
+
+  // 检查是否为新颜色，如果是则自动添加到品牌颜色库
+  const isNewColor = !brandColorStore.colorExists(formData.value.brandId, formData.value.color);
+  if (isNewColor && formData.value.brandId) {
+    try {
+      await brandColorStore.createColor(formData.value.brandId, {
+        colorName: formData.value.color,
+        colorHex: formData.value.colorHexList[0] || '#CCCCCC',
+      });
+    } catch {
+      // 颜色添加失败不阻止耗材保存，只显示提示
+      toast.warning('颜色已保存到耗材，但添加到颜色库失败');
+    }
+  }
 
   const submitData = {
     brandId: formData.value.brandId,
@@ -304,10 +389,52 @@ async function handleMarkAsOpened(consumable: Consumable) {
   }
 }
 
+// 标记为已用完
+async function handleMarkAsDepleted(consumable: Consumable) {
+  try {
+    await showConfirmDialog({
+      title: '确认用完',
+      message: `确定要将 ${consumable.brand?.name} ${consumable.color} 标记为已用完吗？`,
+    });
+    const result = await consumableStore.markAsDepleted(consumable.id);
+    if (result) {
+      toast.success('已标记为用完');
+      // 如果当前不显示已用完，则从列表中移除
+      if (!showDepleted.value && filterStatus.value !== 'depleted') {
+        handleRefresh();
+      }
+    } else {
+      toast.error(consumableStore.error || '操作失败');
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// 恢复已用完的耗材
+async function handleRestoreFromDepleted(consumable: Consumable) {
+  try {
+    await showConfirmDialog({
+      title: '确认恢复',
+      message: `确定要将 ${consumable.brand?.name} ${consumable.color} 恢复为已开封状态吗？`,
+    });
+    const result = await consumableStore.restoreFromDepleted(consumable.id);
+    if (result) {
+      toast.success('已恢复为已开封');
+    } else {
+      toast.error(consumableStore.error || '操作失败');
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
 function clearFilter() {
   filterBrandId.value = '';
   filterTypeId.value = '';
-  filterOpened.value = '';
+  filterStatus.value = '';
+  showDepleted.value = false;
+  quickFilter.value = 'all';
   handleRefresh();
 }
 </script>
@@ -322,6 +449,24 @@ function clearFilter() {
 
     <van-pull-refresh v-model="isRefreshing" @refresh="handleRefresh">
       <div class="consumables-page">
+        <!-- 快捷筛选标签 -->
+        <div class="quick-filters">
+          <van-tag 
+            :type="quickFilter === 'all' ? 'primary' : 'default'"
+            size="medium"
+            @click="setQuickFilter('all')"
+          >
+            全部
+          </van-tag>
+          <van-tag 
+            :type="quickFilter === 'opened' ? 'primary' : 'default'"
+            size="medium"
+            @click="setQuickFilter('opened')"
+          >
+            已开封
+          </van-tag>
+        </div>
+
         <!-- 加载状态 -->
         <div v-if="consumableStore.isLoading && !isRefreshing" class="loading-state">
           <van-skeleton title :row="3" v-for="i in 3" :key="i" />
@@ -345,48 +490,76 @@ function clearFilter() {
           <van-swipe-cell
             v-for="consumable in consumableStore.consumables"
             :key="consumable.id"
+            :disabled="consumable.status === 'depleted'"
           >
             <DataCard
               :title="`${consumable.brand?.name} · ${consumable.type?.name}`"
               :subtitle="consumable.color"
-              :tag="consumable.isOpened ? '已开封' : '未开封'"
-              :tag-type="consumable.isOpened ? 'warning' : 'success'"
+              :tag="getStatusTag(consumable).text"
+              :tag-type="getStatusTag(consumable).type"
               :color-bar="getGradientStyle(consumable.colorHex ? consumable.colorHex.split(',') : ['#ccc'])"
-              @click="openEditForm(consumable)"
+              :class="{ 'depleted-card': consumable.status === 'depleted' }"
+              @click="consumable.status !== 'depleted' && openEditForm(consumable)"
             >
               <div class="card-info">
-                <span class="weight">{{ consumable.remainingWeight }}g / {{ consumable.weight }}g</span>
+                <span class="weight">{{ consumable.remainingWeight.toFixed(0) }}g / {{ consumable.weight.toFixed(0) }}g</span>
                 <van-progress
                   :percentage="Math.round((consumable.remainingWeight / consumable.weight) * 100)"
                   :show-pivot="false"
                   stroke-width="4"
-                  color="#42b883"
+                  :color="consumable.status === 'depleted' ? '#c8c9cc' : '#42b883'"
                 />
               </div>
               <template #footer>
-                <span class="price">¥{{ consumable.price.toFixed(2) }}</span>
-                <span v-if="consumable.isOpened && consumable.openedDays !== null" class="opened-days">
+                <span class="price" :class="{ 'depleted-text': consumable.status === 'depleted' }">
+                  ¥{{ consumable.price.toFixed(2) }}
+                </span>
+                <span v-if="consumable.status === 'depleted' && consumable.depletedAt" class="depleted-date">
+                  {{ new Date(consumable.depletedAt).toLocaleDateString() }} 用完
+                </span>
+                <span v-else-if="consumable.isOpened && consumable.openedDays !== null" class="opened-days" :class="{ 'overdue': isOverdue(consumable) }">
                   {{ formatOpenedDays(consumable.openedDays) }}
+                  <van-icon v-if="isOverdue(consumable)" name="warning-o" color="#ff976a" />
                 </span>
               </template>
             </DataCard>
 
             <template #left>
+              <!-- 已用完的耗材显示恢复按钮 -->
               <van-button
-                square
-                type="primary"
-                text="编辑"
-                class="swipe-btn"
-                @click="openEditForm(consumable)"
-              />
-              <van-button
-                v-if="!consumable.isOpened"
+                v-if="consumable.status === 'depleted'"
                 square
                 type="success"
-                text="开封"
+                text="恢复"
                 class="swipe-btn"
-                @click="handleMarkAsOpened(consumable)"
+                @click="handleRestoreFromDepleted(consumable)"
               />
+              <!-- 正常耗材显示编辑和其他操作 -->
+              <template v-else>
+                <van-button
+                  square
+                  type="primary"
+                  text="编辑"
+                  class="swipe-btn"
+                  @click="openEditForm(consumable)"
+                />
+                <van-button
+                  v-if="!consumable.isOpened"
+                  square
+                  type="success"
+                  text="开封"
+                  class="swipe-btn"
+                  @click="handleMarkAsOpened(consumable)"
+                />
+                <van-button
+                  v-if="consumable.isOpened && consumable.status !== 'depleted'"
+                  square
+                  type="warning"
+                  text="用完"
+                  class="swipe-btn"
+                  @click="handleMarkAsDepleted(consumable)"
+                />
+              </template>
             </template>
             <template #right>
               <van-button
@@ -424,6 +597,11 @@ function clearFilter() {
             is-link
             @click="showFilterStatusPicker = true"
           />
+          <van-cell title="显示已用完">
+            <template #right-icon>
+              <van-switch v-model="showDepleted" size="20" />
+            </template>
+          </van-cell>
         </van-cell-group>
         <div class="filter-actions">
           <van-button block plain @click="clearFilter">清除筛选</van-button>
@@ -481,17 +659,18 @@ function clearFilter() {
           required
           :value="selectedTypeName"
           is-link
-          @click="showTypePicker = true"
+          @click="showTypeCascader = true"
         />
 
-        <van-field
+        <!-- 使用 BrandColorPicker 组件 -->
+        <BrandColorPicker
+          :brand-id="formData.brandId"
           v-model="formData.color"
-          label="颜色名称"
-          required
-          placeholder="如: 白色"
+          v-model:color-hex="formData.colorHexList[0]"
         />
 
-        <van-field label="颜色值">
+        <!-- 多色支持 -->
+        <van-field v-if="formData.colorHexList.length > 1 || formData.brandId" label="多色渐变">
           <template #input>
             <div class="color-picker-multi">
               <div class="color-list">
@@ -598,12 +777,13 @@ function clearFilter() {
       />
     </van-popup>
 
-    <van-popup v-model:show="showTypePicker" position="bottom" round>
-      <van-picker
+    <van-popup v-model:show="showTypeCascader" position="bottom" round>
+      <van-cascader
+        v-model="formData.typeId"
         title="选择类型"
-        :columns="typePickerOptions"
-        @confirm="onTypeConfirm"
-        @cancel="showTypePicker = false"
+        :options="typeCascaderOptions"
+        @close="showTypeCascader = false"
+        @finish="onTypeCascaderFinish"
       />
     </van-popup>
 
@@ -634,6 +814,16 @@ function clearFilter() {
   padding: 12px;
   padding-bottom: 80px;
   min-height: calc(100vh - 96px);
+}
+
+.quick-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quick-filters .van-tag {
+  cursor: pointer;
 }
 
 .loading-state {
@@ -689,6 +879,26 @@ function clearFilter() {
 }
 
 .opened-days {
+  font-size: 12px;
+  color: #969799;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.opened-days.overdue {
+  color: #ff976a;
+}
+
+.depleted-card {
+  opacity: 0.6;
+}
+
+.depleted-text {
+  color: #c8c9cc !important;
+}
+
+.depleted-date {
   font-size: 12px;
   color: #969799;
 }
@@ -782,6 +992,10 @@ function clearFilter() {
 :deep(.van-button--primary) {
   background: #42b883;
   border-color: #42b883;
+}
+
+:deep(.van-tag--primary) {
+  background: #42b883;
 }
 
 :deep(.van-switch--on) {

@@ -2,6 +2,16 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import apiClient from "@/api/client";
 
+// 耗材状态类型
+export type ConsumableStatus = "unopened" | "opened" | "depleted";
+
+// 状态显示名称
+export const CONSUMABLE_STATUS = {
+  unopened: "未开封",
+  opened: "已开封",
+  depleted: "已用完",
+} as const;
+
 export interface Consumable {
   id: string;
   userId: string;
@@ -15,6 +25,8 @@ export interface Consumable {
   purchaseDate: string;
   openedAt: string | null;
   isOpened: boolean;
+  status: string; // 运行时为 ConsumableStatus
+  depletedAt: string | null;
   openedDays: number | null; // Days since opened, null if not opened
   notes: string | null;
   createdAt: string;
@@ -46,6 +58,8 @@ export interface ConsumableFilters {
   color?: string;
   colorHex?: string;
   isOpened?: boolean;
+  status?: ConsumableStatus;
+  includeDepleted?: boolean;
 }
 
 interface ConsumableResponse {
@@ -91,7 +105,7 @@ export const useConsumableStore = defineStore("consumable", () => {
   }
 
   async function fetchConsumables(
-    filters?: ConsumableFilters
+    filters?: ConsumableFilters,
   ): Promise<boolean> {
     isLoading.value = true;
     error.value = null;
@@ -103,6 +117,9 @@ export const useConsumableStore = defineStore("consumable", () => {
       if (filters?.colorHex) params.append("colorHex", filters.colorHex);
       if (filters?.isOpened !== undefined)
         params.append("isOpened", String(filters.isOpened));
+      if (filters?.status) params.append("status", filters.status);
+      if (filters?.includeDepleted)
+        params.append("includeDepleted", String(filters.includeDepleted));
 
       const url = params.toString()
         ? `/consumables?${params.toString()}`
@@ -133,7 +150,7 @@ export const useConsumableStore = defineStore("consumable", () => {
     error.value = null;
     try {
       const response = await apiClient.get<ConsumableResponse>(
-        `/consumables/${id}`
+        `/consumables/${id}`,
       );
       if (response.data.success && response.data.data) {
         currentConsumable.value = response.data.data;
@@ -156,14 +173,14 @@ export const useConsumableStore = defineStore("consumable", () => {
   }
 
   async function createConsumable(
-    data: ConsumableFormData
+    data: ConsumableFormData,
   ): Promise<Consumable | null> {
     isLoading.value = true;
     error.value = null;
     try {
       const response = await apiClient.post<ConsumableResponse>(
         "/consumables",
-        data
+        data,
       );
       if (response.data.success && response.data.data) {
         consumables.value.unshift(response.data.data);
@@ -186,14 +203,14 @@ export const useConsumableStore = defineStore("consumable", () => {
   }
 
   async function batchCreateConsumable(
-    data: BatchCreateFormData
+    data: BatchCreateFormData,
   ): Promise<{ count: number; consumables: Consumable[] } | null> {
     isLoading.value = true;
     error.value = null;
     try {
       const response = await apiClient.post<BatchCreateResponse>(
         "/consumables/batch",
-        data
+        data,
       );
       if (response.data.success && response.data.data) {
         // 将新创建的耗材添加到列表前面
@@ -217,14 +234,14 @@ export const useConsumableStore = defineStore("consumable", () => {
 
   async function updateConsumable(
     id: string,
-    data: Partial<ConsumableFormData>
+    data: Partial<ConsumableFormData>,
   ): Promise<Consumable | null> {
     isLoading.value = true;
     error.value = null;
     try {
       const response = await apiClient.put<ConsumableResponse>(
         `/consumables/${id}`,
-        data
+        data,
       );
       if (response.data.success && response.data.data) {
         const index = consumables.value.findIndex((c) => c.id === id);
@@ -279,7 +296,7 @@ export const useConsumableStore = defineStore("consumable", () => {
 
   async function markAsOpened(
     id: string,
-    openedAt?: string
+    openedAt?: string,
   ): Promise<Consumable | null> {
     isLoading.value = true;
     error.value = null;
@@ -288,7 +305,7 @@ export const useConsumableStore = defineStore("consumable", () => {
         `/consumables/${id}/open`,
         {
           openedAt,
-        }
+        },
       );
       if (response.data.success && response.data.data) {
         const index = consumables.value.findIndex((c) => c.id === id);
@@ -315,6 +332,71 @@ export const useConsumableStore = defineStore("consumable", () => {
     }
   }
 
+  async function markAsDepleted(
+    id: string,
+    depletedAt?: string,
+  ): Promise<Consumable | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.patch<ConsumableResponse>(
+        `/consumables/${id}/deplete`,
+        {
+          depletedAt,
+        },
+      );
+      if (response.data.success && response.data.data) {
+        const index = consumables.value.findIndex((c) => c.id === id);
+        if (index !== -1) {
+          consumables.value[index] = response.data.data;
+        }
+        return response.data.data;
+      }
+      error.value = response.data.error || "标记耗材为已用完失败";
+      return null;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value =
+          axiosError.response?.data?.error || "标记耗材为已用完失败";
+      } else {
+        error.value = "标记耗材为已用完失败";
+      }
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function restoreFromDepleted(id: string): Promise<Consumable | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const response = await apiClient.patch<ConsumableResponse>(
+        `/consumables/${id}/restore`,
+      );
+      if (response.data.success && response.data.data) {
+        const index = consumables.value.findIndex((c) => c.id === id);
+        if (index !== -1) {
+          consumables.value[index] = response.data.data;
+        }
+        return response.data.data;
+      }
+      error.value = response.data.error || "恢复耗材失败";
+      return null;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { data?: { error?: string } } };
+        error.value = axiosError.response?.data?.error || "恢复耗材失败";
+      } else {
+        error.value = "恢复耗材失败";
+      }
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   return {
     consumables,
     currentConsumable,
@@ -328,5 +410,7 @@ export const useConsumableStore = defineStore("consumable", () => {
     updateConsumable,
     deleteConsumable,
     markAsOpened,
+    markAsDepleted,
+    restoreFromDepleted,
   };
 });
