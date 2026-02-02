@@ -47,6 +47,7 @@ import {
   ConfigProvider,
   Collapse,
   CollapseItem,
+  Cascader,
 } from "vant";
 import "vant/lib/index.css";
 
@@ -98,6 +99,7 @@ const vantComponents = [
   ConfigProvider,
   Collapse,
   CollapseItem,
+  Cascader,
 ];
 
 vantComponents.forEach((component) => {
