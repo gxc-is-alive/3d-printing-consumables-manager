@@ -45,6 +45,8 @@ import {
   Progress,
   Badge,
   ConfigProvider,
+  Collapse,
+  CollapseItem,
 } from "vant";
 import "vant/lib/index.css";
 
@@ -94,6 +96,8 @@ const vantComponents = [
   Progress,
   Badge,
   ConfigProvider,
+  Collapse,
+  CollapseItem,
 ];
 
 vantComponents.forEach((component) => {
