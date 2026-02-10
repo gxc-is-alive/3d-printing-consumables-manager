@@ -31,14 +31,28 @@ async function handleImportData(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+
+  if (!file.name.endsWith('.json')) {
+    toast.error('请选择 JSON 格式的备份文件');
+    input.value = '';
+    return;
+  }
+
   isLoading.value = true;
   try {
-    const formData = new FormData();
-    formData.append('file', file);
-    await apiClient.post('/backup/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-    toast.success('导入成功，请刷新页面');
-  } catch {
-    toast.error('导入失败');
+    const text = await file.text();
+    const data = JSON.parse(text);
+    await apiClient.post('/backup/import', data);
+    toast.success('导入成功，页面将在3秒后刷新');
+    setTimeout(() => {
+      window.location.reload();
+    }, 3000);
+  } catch (error: any) {
+    if (error instanceof SyntaxError) {
+      toast.error('无效的备份文件格式');
+    } else {
+      toast.error(error.response?.data?.error || '导入失败');
+    }
   } finally {
     isLoading.value = false;
     input.value = '';

@@ -13,17 +13,22 @@ export interface BackupData {
   consumableTypes: any[];
   consumables: any[];
   usageRecords: any[];
+  brandTypes?: any[];
+  brandColors?: any[];
 }
 
 export const backupService = {
   // 导出用户的所有数据为 JSON 备份
   async exportUserData(userId: string): Promise<BackupData> {
-    const [brands, consumableTypes, consumables, usageRecords] = await Promise.all([
-      prisma.brand.findMany({ where: { userId } }),
-      prisma.consumableType.findMany({ where: { userId } }),
-      prisma.consumable.findMany({ where: { userId } }),
-      prisma.usageRecord.findMany({ where: { userId } }),
-    ]);
+    const [brands, consumableTypes, consumables, usageRecords, brandTypes, brandColors] =
+      await Promise.all([
+        prisma.brand.findMany({ where: { userId } }),
+        prisma.consumableType.findMany({ where: { userId } }),
+        prisma.consumable.findMany({ where: { userId } }),
+        prisma.usageRecord.findMany({ where: { userId } }),
+        prisma.brandType.findMany({ where: { userId } }),
+        prisma.brandColor.findMany({ where: { userId } }),
+      ]);
 
     return {
       exportedAt: new Date().toISOString(),
@@ -33,6 +38,8 @@ export const backupService = {
       consumableTypes,
       consumables,
       usageRecords,
+      brandTypes,
+      brandColors,
     };
   },
 
@@ -44,10 +51,24 @@ export const backupService = {
     try {
       // 使用事务确保数据一致性
       await prisma.$transaction(async (tx) => {
-        // 先删除用户现有数据
+        // 先删除用户现有数据（注意顺序：先删关联表，再删主表）
+        // 1. 删除使用记录（引用 consumable）
         await tx.usageRecord.deleteMany({ where: { userId } });
+        // 2. 删除耗材（引用 brand, consumableType）
         await tx.consumable.deleteMany({ where: { userId } });
+        // 3. 删除品牌关联表（引用 brand, consumableType）
+        await tx.brandType.deleteMany({ where: { userId } });
+        await tx.brandColor.deleteMany({ where: { userId } });
+        await tx.brandConfigFile.deleteMany({ where: { userId } });
+        // 4. 删除配件相关（accessoryUsage → accessory → accessoryCategory）
+        await tx.accessoryUsage.deleteMany({ where: { userId } });
+        await tx.accessory.deleteMany({ where: { userId } });
+        // 5. 删除保养记录
+        await tx.maintenanceRecord.deleteMany({ where: { userId } });
+        // 6. 删除品牌（已无引用）
         await tx.brand.deleteMany({ where: { userId } });
+        // 7. 删除耗材类型（先删子类型，再删父类型，因为自引用 onDelete: Restrict）
+        await tx.consumableType.deleteMany({ where: { userId, parentId: { not: null } } });
         await tx.consumableType.deleteMany({ where: { userId } });
 
         // 创建 ID 映射表
@@ -68,12 +89,28 @@ export const backupService = {
           brandIdMap.set(brand.id, newBrand.id);
         }
 
-        // 导入耗材类型
-        for (const type of data.consumableTypes) {
+        // 导入耗材类型（先导入大类，再导入小类，保持层级关系）
+        const parentTypes = data.consumableTypes.filter((t: any) => !t.parentId);
+        const childTypes = data.consumableTypes.filter((t: any) => t.parentId);
+
+        for (const type of parentTypes) {
           const newType = await tx.consumableType.create({
             data: {
               name: type.name,
               description: type.description,
+              userId,
+            },
+          });
+          typeIdMap.set(type.id, newType.id);
+        }
+
+        for (const type of childTypes) {
+          const mappedParentId = typeIdMap.get(type.parentId);
+          const newType = await tx.consumableType.create({
+            data: {
+              name: type.name,
+              description: type.description,
+              parentId: mappedParentId || null,
               userId,
             },
           });
@@ -94,6 +131,8 @@ export const backupService = {
               purchaseDate: new Date(consumable.purchaseDate),
               openedAt: consumable.openedAt ? new Date(consumable.openedAt) : null,
               isOpened: consumable.isOpened,
+              status: consumable.status || (consumable.isOpened ? 'opened' : 'unopened'),
+              depletedAt: consumable.depletedAt ? new Date(consumable.depletedAt) : null,
               notes: consumable.notes,
               userId,
             },
@@ -113,6 +152,38 @@ export const backupService = {
               userId,
             },
           });
+        }
+
+        // 导入品牌类型关联
+        if (data.brandTypes) {
+          for (const bt of data.brandTypes) {
+            await tx.brandType.create({
+              data: {
+                brandId: brandIdMap.get(bt.brandId) || bt.brandId,
+                typeId: typeIdMap.get(bt.typeId) || bt.typeId,
+                printTempMin: bt.printTempMin,
+                printTempMax: bt.printTempMax,
+                bedTempMin: bt.bedTempMin,
+                bedTempMax: bt.bedTempMax,
+                notes: bt.notes,
+                userId,
+              },
+            });
+          }
+        }
+
+        // 导入品牌颜色
+        if (data.brandColors) {
+          for (const bc of data.brandColors) {
+            await tx.brandColor.create({
+              data: {
+                brandId: brandIdMap.get(bc.brandId) || bc.brandId,
+                colorName: bc.colorName,
+                colorHex: bc.colorHex || '#CCCCCC',
+                userId,
+              },
+            });
+          }
         }
       });
 

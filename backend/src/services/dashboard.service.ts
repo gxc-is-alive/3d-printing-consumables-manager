@@ -11,6 +11,8 @@ export interface InventoryGroupByBrand {
 export interface InventoryGroupByType {
   typeId: string;
   typeName: string;
+  parentId: string | null;
+  parentName: string | null;
   totalWeight: number;
   totalRemainingWeight: number;
   count: number;
@@ -78,7 +80,14 @@ export class DashboardService {
       where: { userId },
       include: {
         brand: { select: { id: true, name: true } },
-        type: { select: { id: true, name: true } },
+        type: {
+          select: {
+            id: true,
+            name: true,
+            parentId: true,
+            parent: { select: { id: true, name: true } },
+          },
+        },
       },
     });
 
@@ -113,6 +122,8 @@ export class DashboardService {
         typeMap.set(c.typeId, {
           typeId: c.typeId,
           typeName: c.type.name,
+          parentId: c.type.parentId,
+          parentName: c.type.parent?.name ?? null,
           totalWeight: c.weight,
           totalRemainingWeight: c.remainingWeight,
           count: 1,

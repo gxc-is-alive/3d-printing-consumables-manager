@@ -13,6 +13,8 @@ export interface InventoryGroupByBrand {
 export interface InventoryGroupByType {
   typeId: string;
   typeName: string;
+  parentId: string | null;
+  parentName: string | null;
   totalWeight: number;
   totalRemainingWeight: number;
   count: number;

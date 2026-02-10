@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useDashboardStore } from "@/stores/dashboard";
@@ -19,16 +19,93 @@ const activeTab = ref<"brand" | "type" | "color">("brand");
 
 // Filter state for dashboard
 const filterBrandId = ref('');
-const filterTypeId = ref('');
+const filterTypeIds = ref<string[]>([]);
 const filterColor = ref('');
 
+// 类型筛选下拉状态
+const showTypeFilter = ref(false);
+const typeFilterRef = ref<HTMLElement | null>(null);
+
+// 类型筛选：展开的大类
+const expandedFilterCategories = ref<Set<string>>(new Set());
+
+// 切换大类展开
+function toggleFilterCategory(categoryId: string) {
+  if (expandedFilterCategories.value.has(categoryId)) {
+    expandedFilterCategories.value.delete(categoryId);
+  } else {
+    expandedFilterCategories.value.add(categoryId);
+  }
+}
+
+// 切换选中某个类型（大类或小类）
+function toggleTypeSelection(typeId: string, isCategory: boolean, category?: { id: string; children: { id: string }[] }) {
+  const ids = filterTypeIds.value;
+  if (isCategory && category) {
+    // 点击大类：选中/取消该大类及其所有小类
+    const allIds = [category.id, ...category.children.map(c => c.id)];
+    const allSelected = allIds.every(id => ids.includes(id));
+    if (allSelected) {
+      filterTypeIds.value = ids.filter(id => !allIds.includes(id));
+    } else {
+      const newIds = new Set([...ids, ...allIds]);
+      filterTypeIds.value = Array.from(newIds);
+    }
+  } else {
+    // 点击小类：单独切换
+    const idx = ids.indexOf(typeId);
+    if (idx >= 0) {
+      filterTypeIds.value = ids.filter(id => id !== typeId);
+    } else {
+      filterTypeIds.value = [...ids, typeId];
+    }
+  }
+}
+
+// 是否选中
+function isTypeSelected(typeId: string): boolean {
+  return filterTypeIds.value.includes(typeId);
+}
+
+// 大类是否全选
+function isCategoryAllSelected(category: { id: string; children: { id: string }[] }): boolean {
+  const allIds = [category.id, ...category.children.map(c => c.id)];
+  return allIds.every(id => filterTypeIds.value.includes(id));
+}
+
+// 大类是否部分选中
+function isCategoryPartialSelected(category: { id: string; children: { id: string }[] }): boolean {
+  const allIds = [category.id, ...category.children.map(c => c.id)];
+  const selectedCount = allIds.filter(id => filterTypeIds.value.includes(id)).length;
+  return selectedCount > 0 && selectedCount < allIds.length;
+}
+
+// 筛选显示文本
+const typeFilterDisplayText = computed(() => {
+  if (filterTypeIds.value.length === 0) return '所有类型';
+  return `已选 ${filterTypeIds.value.length} 个类型`;
+});
+
+// 点击外部关闭
+function handleTypeFilterClickOutside(e: MouseEvent) {
+  if (typeFilterRef.value && !typeFilterRef.value.contains(e.target as Node)) {
+    showTypeFilter.value = false;
+  }
+}
+
 onMounted(async () => {
+  document.addEventListener('click', handleTypeFilterClickOutside);
   await Promise.all([
     dashboardStore.fetchAll(),
     brandStore.fetchBrands(),
     typeStore.fetchTypes(),
+    typeStore.fetchHierarchy(),
     accessoryStore.fetchAlerts(),
   ]);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleTypeFilterClickOutside);
 });
 
 async function handleLogout() {
@@ -87,8 +164,11 @@ const filteredByBrand = computed(() => {
 const filteredByType = computed(() => {
   if (!dashboardStore.inventory) return [];
   let items = dashboardStore.inventory.byType;
-  if (filterTypeId.value) {
-    items = items.filter(item => item.typeId === filterTypeId.value);
+  if (filterTypeIds.value.length > 0) {
+    items = items.filter(item => 
+      filterTypeIds.value.includes(item.typeId) ||
+      (item.parentId && filterTypeIds.value.includes(item.parentId))
+    );
   }
   return items;
 });
@@ -108,12 +188,12 @@ const filteredByColor = computed(() => {
 
 function clearDashboardFilters() {
   filterBrandId.value = '';
-  filterTypeId.value = '';
+  filterTypeIds.value = [];
   filterColor.value = '';
 }
 
 const hasActiveFilters = computed(() => {
-  return filterBrandId.value !== '' || filterTypeId.value !== '' || filterColor.value !== '';
+  return filterBrandId.value !== '' || filterTypeIds.value.length > 0 || filterColor.value !== '';
 });
 </script>
 
@@ -289,14 +369,41 @@ const hasActiveFilters = computed(() => {
                 </option>
               </select>
             </div>
-            <div v-if="activeTab === 'type'" class="filter-item">
+            <div v-if="activeTab === 'type'" class="filter-item type-filter-item" ref="typeFilterRef">
               <label>筛选类型</label>
-              <select v-model="filterTypeId">
-                <option value="">所有类型</option>
-                <option v-for="type in typeStore.types" :key="type.id" :value="type.id">
-                  {{ type.name }}
-                </option>
-              </select>
+              <div class="type-cascade-filter">
+                <div class="type-filter-trigger" @click.stop="showTypeFilter = !showTypeFilter">
+                  <span :class="{ placeholder: filterTypeIds.length === 0 }">{{ typeFilterDisplayText }}</span>
+                  <span class="trigger-arrow" :class="{ open: showTypeFilter }">▾</span>
+                </div>
+                <div v-if="showTypeFilter" class="type-filter-dropdown" @click.stop>
+                  <div v-for="cat in typeStore.hierarchy.categories" :key="cat.id" class="filter-category">
+                    <div class="filter-category-header" @click="toggleFilterCategory(cat.id)">
+                      <input
+                        type="checkbox"
+                        :checked="isCategoryAllSelected(cat)"
+                        :indeterminate="isCategoryPartialSelected(cat)"
+                        @click.stop="toggleTypeSelection(cat.id, true, cat)"
+                      />
+                      <span class="category-name">{{ cat.name }}</span>
+                      <span class="expand-icon" :class="{ expanded: expandedFilterCategories.has(cat.id) }">▸</span>
+                    </div>
+                    <div v-if="expandedFilterCategories.has(cat.id) && cat.children.length > 0" class="filter-subtypes">
+                      <label v-for="sub in cat.children" :key="sub.id" class="filter-subtype-item">
+                        <input
+                          type="checkbox"
+                          :checked="isTypeSelected(sub.id)"
+                          @change="toggleTypeSelection(sub.id, false)"
+                        />
+                        <span>{{ sub.name }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div v-if="filterTypeIds.length > 0" class="filter-actions">
+                    <button class="clear-type-filter-btn" @click="filterTypeIds = []; showTypeFilter = false;">清除选择</button>
+                  </div>
+                </div>
+              </div>
             </div>
             <div v-if="activeTab === 'color'" class="filter-item color-filter-item">
               <label>搜索颜色</label>
@@ -364,7 +471,10 @@ const hasActiveFilters = computed(() => {
               class="inventory-card"
             >
               <div class="card-header">
-                <h3>{{ item.typeName }}</h3>
+                <div class="type-header">
+                  <span v-if="item.parentName" class="parent-type-tag">{{ item.parentName }}</span>
+                  <h3>{{ item.typeName }}</h3>
+                </div>
                 <span class="count">{{ item.count }} 卷</span>
               </div>
               <div class="card-body">
@@ -878,6 +988,165 @@ const hasActiveFilters = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.type-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.parent-type-tag {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* 类型级联多选筛选器 */
+.type-filter-item {
+  position: relative;
+}
+
+.type-cascade-filter {
+  position: relative;
+}
+
+.type-filter-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  min-width: 180px;
+}
+
+.type-filter-trigger:hover {
+  border-color: #42b883;
+}
+
+.type-filter-trigger .placeholder {
+  color: #999;
+}
+
+.trigger-arrow {
+  transition: transform 0.2s;
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.trigger-arrow.open {
+  transform: rotate(180deg);
+}
+
+.type-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  margin-top: 4px;
+  padding: 8px 0;
+}
+
+.filter-category {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.filter-category:last-child {
+  border-bottom: none;
+}
+
+.filter-category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.filter-category-header:hover {
+  background: #f5f5f5;
+}
+
+.filter-category-header input[type="checkbox"] {
+  accent-color: #42b883;
+  cursor: pointer;
+}
+
+.category-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.expand-icon {
+  font-size: 0.8rem;
+  color: #999;
+  transition: transform 0.2s;
+}
+
+.expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.filter-subtypes {
+  padding: 4px 0 4px 20px;
+  background: #fafafa;
+}
+
+.filter-subtype-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+
+.filter-subtype-item:hover {
+  background: #f0f0f0;
+}
+
+.filter-subtype-item input[type="checkbox"] {
+  accent-color: #42b883;
+  cursor: pointer;
+}
+
+.filter-actions {
+  padding: 8px 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.clear-type-filter-btn {
+  width: 100%;
+  padding: 6px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #666;
+  transition: background 0.2s;
+}
+
+.clear-type-filter-btn:hover {
+  background: #e0e0e0;
 }
 
 .color-swatch {
